@@ -16,6 +16,7 @@ export type ServerConfig = {
   trafficDropThreshold: number;
   audioEnabled: boolean;
   audioCooldownSeconds: number;
+  foxNewsRssUrl: string;
 };
 
 function numberFromEnv(name: string, fallback: number) {
@@ -52,6 +53,7 @@ export function getServerConfig(): ServerConfig {
     trafficSpikeThreshold: numberFromEnv("TRAFFIC_SPIKE_THRESHOLD", 350),
     trafficDropThreshold: numberFromEnv("TRAFFIC_DROP_THRESHOLD", 80),
     audioEnabled: boolFromEnv("ALERT_AUDIO_ENABLED", true),
-    audioCooldownSeconds: numberFromEnv("ALERT_AUDIO_COOLDOWN_SECONDS", 180)
+    audioCooldownSeconds: numberFromEnv("ALERT_AUDIO_COOLDOWN_SECONDS", 180),
+    foxNewsRssUrl: process.env.FOX_NEWS_RSS_URL || "https://moxie.foxnews.com/google-publisher/latest.xml"
   };
 }

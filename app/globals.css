@@ -563,30 +563,43 @@ a {
 .system-log {
   flex: 0 0 auto;
   width: calc(100% - 20px);
-  max-height: 132px;
+  height: 34px;
   margin: 0 10px;
-  padding: 6px 10px;
+  padding: 0 10px;
   overflow: hidden;
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  align-items: center;
   border: 1px solid rgba(111, 231, 255, 0.16);
   background: rgba(2, 8, 13, 0.58);
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
 }
 
-.system-log-entry {
-  display: flex;
+.ticker-track {
+  display: inline-flex;
+  align-items: baseline;
+  white-space: nowrap;
+  animation-name: ticker-scroll;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.ticker-entry {
+  display: inline-flex;
   align-items: baseline;
   gap: 8px;
-  min-height: 15px;
   font-size: 11px;
   line-height: 1.3;
   opacity: 0.85;
-  animation: log-settle 900ms ease-out;
 }
 
-.system-log-time {
+.ticker-entry::after {
+  content: "\25c6";
+  margin: 0 22px;
+  color: rgba(111, 231, 255, 0.3);
+  font-size: 9px;
+}
+
+.ticker-time {
   flex: 0 0 auto;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
@@ -594,52 +607,32 @@ a {
   opacity: 0.7;
 }
 
-.system-log-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.ticker-text {
   color: var(--text);
 }
 
-.system-log-entry.info .system-log-text {
+.ticker-entry.info .ticker-text {
   color: var(--muted);
 }
 
-.system-log-entry.nominal .system-log-text {
+.ticker-entry.nominal .ticker-text {
   color: var(--green);
 }
 
-.system-log-entry.watch .system-log-text {
+.ticker-entry.watch .ticker-text {
   color: var(--amber);
 }
 
-.system-log-entry.critical .system-log-text {
+.ticker-entry.critical .ticker-text {
   color: var(--red);
 }
 
-.system-log-entry.is-new {
-  animation: log-highlight 1600ms ease-out;
-}
-
-@keyframes log-settle {
+@keyframes ticker-scroll {
   from {
-    opacity: 0;
-    transform: translateY(-3px);
+    transform: translateX(0);
   }
   to {
-    opacity: 0.85;
-    transform: translateY(0);
-  }
-}
-
-@keyframes log-highlight {
-  0% {
-    opacity: 1;
-    color: var(--cyan);
-  }
-  100% {
-    opacity: 0.85;
+    transform: translateX(-50%);
   }
 }
 
@@ -838,6 +831,22 @@ a {
   background: var(--green);
   box-shadow: 0 0 0 6px rgba(109, 255, 179, 0.12), 0 0 18px var(--green);
   animation: pulse 2.3s ease-in-out infinite;
+}
+
+.map-point.leaving {
+  animation: map-point-fade-out 700ms ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes map-point-fade-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.4);
+  }
 }
 
 .map-empty {

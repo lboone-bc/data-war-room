@@ -261,6 +261,29 @@ function playTone(context: AudioContext, urgent = false) {
   oscillator.stop(context.currentTime + 0.48);
 }
 
+// Distinct from playTone on purpose: a square-wave siren sweep (vs. the
+// normal alert's sawtooth blip) so a database-monitor outage is unmistakably
+// different from every other critical alert, even from across the room.
+const SERIOUS_ALERT_ID = "database-monitors-down";
+const SERIOUS_ALERT_REPEAT_MS = 12_000;
+
+function playAlarmPulse(context: AudioContext) {
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  oscillator.type = "square";
+  oscillator.frequency.setValueAtTime(900, context.currentTime);
+  oscillator.frequency.linearRampToValueAtTime(550, context.currentTime + 0.3);
+  oscillator.frequency.linearRampToValueAtTime(900, context.currentTime + 0.6);
+  gain.gain.setValueAtTime(0.0001, context.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.22, context.currentTime + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.22, context.currentTime + 0.55);
+  gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.6);
+  oscillator.connect(gain);
+  gain.connect(context.destination);
+  oscillator.start();
+  oscillator.stop(context.currentTime + 0.62);
+}
+
 function AudioAlert({ alerts, enabled, cooldownSeconds }: {
   alerts: Alert[];
   enabled: boolean;
@@ -269,8 +292,9 @@ function AudioAlert({ alerts, enabled, cooldownSeconds }: {
   const audioRef = useRef<AudioContext | null>(null);
   const lastPlayedRef = useRef(0);
   const [unlocked, setUnlocked] = useState(false);
+  const seriousAlert = alerts.find((alert) => alert.id === SERIOUS_ALERT_ID);
   const audibleAlert = alerts.find(
-    (alert) => alert.audible && alert.severity === "critical"
+    (alert) => alert.audible && alert.severity === "critical" && alert.id !== SERIOUS_ALERT_ID
   );
 
   const unlock = useCallback(() => {
@@ -290,6 +314,17 @@ function AudioAlert({ alerts, enabled, cooldownSeconds }: {
     lastPlayedRef.current = now;
     playTone(audioRef.current, true);
   }, [audibleAlert, cooldownSeconds, enabled, unlocked]);
+
+  // No cooldown gate here on purpose: a database monitor down is serious
+  // enough to keep sounding on a short fixed interval until it clears,
+  // rather than waiting out the normal 180s cooldown between chirps.
+  useEffect(() => {
+    if (!enabled || !seriousAlert || !unlocked || !audioRef.current) return;
+    const context = audioRef.current;
+    playAlarmPulse(context);
+    const interval = window.setInterval(() => playAlarmPulse(context), SERIOUS_ALERT_REPEAT_MS);
+    return () => window.clearInterval(interval);
+  }, [enabled, seriousAlert, unlocked]);
 
   return (
     <button className="audio-button" onClick={unlock} type="button" title="Arm and test alert audio">
@@ -405,8 +440,13 @@ function DatabaseFrame({
       const rect = shell.getBoundingClientRect();
       const summaryHeight = summaryRef.current?.getBoundingClientRect().height ?? 0;
       const logHeight = logRef.current?.getBoundingClientRect().height ?? 0;
+      const shellStyle = window.getComputedStyle(shell);
+      const shellPadding = parseFloat(shellStyle.paddingTop) + parseFloat(shellStyle.paddingBottom);
       const reserved =
-        summaryHeight + logHeight + (summaryHeight || logHeight ? FRAME_SHELL_GAP * 2 : 0);
+        summaryHeight +
+        logHeight +
+        shellPadding +
+        (summaryHeight || logHeight ? FRAME_SHELL_GAP * 2 : 0);
       const availableHeight = Math.max(0, rect.height - reserved);
 
       const nextScale = Math.min(
@@ -502,8 +542,87 @@ function DatabaseFrame({
   );
 }
 
+type ProjectedGeoPoint = WallboardPayload["analytics"]["geo"][number] & { x: number; y: number };
+
+function mapPointKey(point: { countryCode?: string; region: string; longitude: number; latitude: number }) {
+  return `${point.countryCode || point.region}-${point.longitude}-${point.latitude}`;
+}
+
+const MAP_POINT_FADE_MS = 700;
+
+type DisplayedPoint = ProjectedGeoPoint & { key: string; leaving: boolean };
+
+// `points` is a brand-new array reference on every GeoPanel render (it's
+// recomputed inline from `payload`), and this hook's own setState calls
+// cause GeoPanel to re-render — so the merge below must return the *same*
+// `current` reference when nothing actually changed, or React never bails
+// out of the render loop this creates.
+function sameDisplayedPoints(a: DisplayedPoint[], b: DisplayedPoint[]) {
+  if (a.length !== b.length) return false;
+  return a.every((point, index) => {
+    const other = b[index];
+    return point.key === other.key && point.leaving === other.leaving && point.value === other.value;
+  });
+}
+
+// GA realtime naturally drops a location the moment it's no longer active
+// (see AGENTS.md), so `points` can lose an entry between polls with no
+// warning. Without this, a dot just vanishes on the next render. This hook
+// keeps a departed point mounted for MAP_POINT_FADE_MS with a `leaving` flag
+// so the render layer can fade it out instead of popping it off the map.
+function useFadingMapPoints(points: ProjectedGeoPoint[]) {
+  const [displayed, setDisplayed] = useState<DisplayedPoint[]>([]);
+  const removalTimers = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    const incoming = new Map(points.map((point) => [mapPointKey(point), point]));
+
+    setDisplayed((current) => {
+      const next: DisplayedPoint[] = [];
+      const seen = new Set<string>();
+
+      for (const entry of current) {
+        const fresh = incoming.get(entry.key);
+        if (fresh) {
+          const timer = removalTimers.current.get(entry.key);
+          if (timer) {
+            window.clearTimeout(timer);
+            removalTimers.current.delete(entry.key);
+          }
+          next.push({ ...fresh, key: entry.key, leaving: false });
+        } else if (entry.leaving) {
+          next.push(entry);
+        } else {
+          next.push({ ...entry, leaving: true });
+          const timer = window.setTimeout(() => {
+            setDisplayed((latest) => latest.filter((item) => item.key !== entry.key));
+            removalTimers.current.delete(entry.key);
+          }, MAP_POINT_FADE_MS);
+          removalTimers.current.set(entry.key, timer);
+        }
+        seen.add(entry.key);
+      }
+
+      for (const [key, point] of incoming) {
+        if (!seen.has(key)) {
+          next.push({ ...point, key, leaving: false });
+        }
+      }
+
+      return sameDisplayedPoints(current, next) ? current : next;
+    });
+  }, [points]);
+
+  useEffect(() => {
+    const timers = removalTimers.current;
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, []);
+
+  return displayed;
+}
+
 function GeoPanel({ payload }: { payload: WallboardPayload }) {
-  const points = payload.analytics.geo
+  const rawPoints = payload.analytics.geo
     .map((point) => {
       const projected = worldProjection([point.longitude, point.latitude]);
       if (!projected) return null;
@@ -514,6 +633,8 @@ function GeoPanel({ payload }: { payload: WallboardPayload }) {
       };
     })
     .filter((point): point is NonNullable<typeof point> => Boolean(point));
+
+  const points = useFadingMapPoints(rawPoints);
 
   return (
     <Panel title="World Access Map" icon={<Globe2 size={18} />} className="geo-panel">
@@ -538,8 +659,8 @@ function GeoPanel({ payload }: { payload: WallboardPayload }) {
         <div className="map-point-layer">
           {points.map((point) => (
             <span
-              key={`${point.countryCode || point.region}-${point.longitude}-${point.latitude}`}
-              className="map-point"
+              key={point.key}
+              className={`map-point${point.leaving ? " leaving" : ""}`}
               style={{
                 left: `${point.x}%`,
                 top: `${(point.y / MAP_VIEWBOX_HEIGHT) * 100}%`
@@ -555,8 +676,8 @@ function GeoPanel({ payload }: { payload: WallboardPayload }) {
         ) : null}
       </div>
       <div className="geo-list">
-        {payload.analytics.geo.slice(0, 4).map((point) => (
-          <div key={`${point.countryCode || point.region}-${point.value}`}>
+        {payload.analytics.geo.slice(0, 4).map((point, index) => (
+          <div key={`${point.countryCode || point.region}-${point.region}-${index}`}>
             <span>{point.region}</span>
             <strong>{point.value}</strong>
           </div>
@@ -597,25 +718,54 @@ function TrafficPanel({ payload }: { payload: WallboardPayload }) {
   );
 }
 
+const TICKER_PX_PER_SECOND = 60;
+
 function SystemLog({ entries }: { entries: SystemLogEntry[] }) {
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const [duration, setDuration] = useState(30);
+
+  const items = entries.length
+    ? entries
+    : [
+        {
+          id: "system-log-empty",
+          text: "system log initializing",
+          severity: "info" as LogSeverity,
+          at: new Date().toISOString()
+        }
+      ];
+  // Rendered twice back-to-back so the -50% translateX loop is seamless.
+  const trackItems = [...items, ...items];
+
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+
+    const updateDuration = () => {
+      const width = track.scrollWidth / 2;
+      setDuration(Math.max(12, width / TICKER_PX_PER_SECOND));
+    };
+
+    updateDuration();
+    const observer = new ResizeObserver(updateDuration);
+    observer.observe(track);
+    return () => observer.disconnect();
+  }, [items.length]);
+
   return (
     <div className="system-log" role="log" aria-live="off">
-      {entries.length ? (
-        entries.map((entry, index) => (
-          <div
-            key={entry.id}
-            className={`system-log-entry ${entry.severity}${index === 0 ? " is-new" : ""}`}
-          >
-            <span className="system-log-time">{timeLabel(entry.at)}</span>
-            <span className="system-log-text">{entry.text}</span>
-          </div>
-        ))
-      ) : (
-        <div className="system-log-entry info">
-          <span className="system-log-time">{timeLabel(new Date().toISOString())}</span>
-          <span className="system-log-text">system log initializing</span>
-        </div>
-      )}
+      <div
+        className="ticker-track"
+        ref={trackRef}
+        style={{ animationDuration: `${duration}s` }}
+      >
+        {trackItems.map((entry, index) => (
+          <span key={`${entry.id}-${index}`} className={`ticker-entry ${entry.severity}`}>
+            <span className="ticker-time">{timeLabel(entry.at)}</span>
+            <span className="ticker-text">{entry.text}</span>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

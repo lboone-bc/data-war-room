@@ -36,6 +36,7 @@ TRAFFIC_SPIKE_THRESHOLD=350
 TRAFFIC_DROP_THRESHOLD=80
 ALERT_AUDIO_ENABLED=true
 ALERT_AUDIO_COOLDOWN_SECONDS=180
+FOX_NEWS_RSS_URL=https://moxie.foxnews.com/google-publisher/latest.xml
 ```
 
 `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`, or `GA_CLIENT_EMAIL` plus `GA_PRIVATE_KEY` can be used for Google Analytics credentials. Prefer a service account with Viewer access to only the needed GA4 property.
@@ -63,8 +64,8 @@ The token is stored in browser local storage and as a cookie so normal refreshes
 - The trend/sparkline chart in Website Pulse hides itself automatically via a CSS container query when its panel doesn't have enough vertical room to render usable bars (this can happen depending on screen height and other panel sizing) — this is intentional graceful degradation, not a bug, and it reappears once the panel has enough room (e.g. on a taller/4K display).
 - `DATABASE_MONITORS_STATUS_URL` can point at JSON with `downCount`, `down_count`, `down`, or a `monitors` array with `status` values. If it is not configured, the All Monitors row stays blank/nominal. If it is configured, any down/critical/failed/offline monitor creates a critical alert.
 - Website health checks are passive by default and do not send synthetic requests to the public website. Set `WEBSITE_HEALTHCHECK_ENABLED=true` only if you want the wallboard API to send a periodic `HEAD` request to `WEBSITE_HEALTHCHECK_URL`.
-- Audible alerts cover critical website traffic anomalies, failed website health, critical SSL state, and database monitor down states. Alerts respect the configured cooldown, and require the `arm audio` button to have been pressed this browser session before anything can play (browser autoplay policy).
-- A compact "system log" under the Active Database System panel shows a passive, ambient operations-log feed: real alerts appear there immediately (deduplicated, so the same alert isn't repeated), plus an occasional (every 2-5 minutes, randomized) ambient line pulled from either a rotating Hacker News headline or an internal "heartbeat" status phrase. This is purely decorative/ambient — it never plays audio, never raises an alert, and silently falls back to heartbeat-only lines if the Hacker News feed is unreachable. Headlines are fetched server-side (`lib/newsFeed.ts`, no API key required) and cached for 15 minutes.
+- Audible alerts cover critical website traffic anomalies, failed website health, critical SSL state, and database monitor down states. All of these except a database monitor outage share one alert tone, gated to the configured cooldown (180s by default). A database monitor reporting down (the Site24x7 "All Monitors" feed) is treated as the most serious case: it plays a distinctly different siren-style tone that repeats automatically every 12 seconds — no cooldown, no manual dismiss — until the monitor recovers. Both tones require the `arm audio` button to have been pressed this browser session before anything can play (browser autoplay policy).
+- A ticker under the Active Database System panel scrolls a passive, ambient operations-log feed horizontally: real alerts appear there immediately (deduplicated, so the same alert isn't repeated), plus an occasional (every 2-5 minutes, randomized) ambient line pulled from a rotating Hacker News or Fox News headline, or an internal "heartbeat" status phrase. This is purely decorative/ambient — it never plays audio, never raises an alert, and silently falls back to heartbeat-only lines if both headline feeds are unreachable. Headlines are fetched server-side (`lib/newsFeed.ts`; Hacker News needs no API key, Fox News reads its public RSS feed at `FOX_NEWS_RSS_URL`) and cached for 15 minutes per source.
 
 ## Scripts
 

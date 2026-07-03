@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAnalyticsSnapshot } from "@/lib/analytics";
 import { getServerConfig } from "@/lib/config";
-import { getNewsHeadlines } from "@/lib/newsFeed";
+import { getFoxHeadlines, getNewsHeadlines } from "@/lib/newsFeed";
 import {
   buildTrafficAlerts,
   checkDatabaseMonitors,
@@ -30,13 +30,22 @@ export async function GET(request: NextRequest) {
   }
 
   const generatedAt = new Date().toISOString();
-  const [analyticsResult, website, ssl, databaseMonitors, newsHeadlines] = await Promise.all([
-    getAnalyticsSnapshot(config),
-    checkWebsite(config),
-    checkSsl(config),
-    checkDatabaseMonitors(config),
-    getNewsHeadlines()
-  ]);
+  const [analyticsResult, website, ssl, databaseMonitors, hnHeadlines, foxHeadlines] =
+    await Promise.all([
+      getAnalyticsSnapshot(config),
+      checkWebsite(config),
+      checkSsl(config),
+      checkDatabaseMonitors(config),
+      getNewsHeadlines(),
+      getFoxHeadlines(config.foxNewsRssUrl)
+    ]);
+  // Interleave so the ambient ticker rotation (app/wallboard/page.tsx) isn't
+  // dominated by whichever source happens to respond with more items.
+  const newsHeadlines = hnHeadlines
+    .flatMap((headline, index) => [headline, foxHeadlines[index]])
+    .concat(foxHeadlines.slice(hnHeadlines.length))
+    .filter((headline): headline is (typeof hnHeadlines)[number] => Boolean(headline))
+    .slice(0, 12);
 
   const payload: WallboardPayload = {
     generatedAt,

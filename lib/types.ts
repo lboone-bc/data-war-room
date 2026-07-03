@@ -32,6 +32,7 @@ export type Alert = {
 export type NewsHeadline = {
   id: string;
   text: string;
+  source?: "hn" | "fox";
 };
 
 export type FeedState = "live" | "setup" | "degraded";
