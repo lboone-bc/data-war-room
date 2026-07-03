@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAnalyticsSnapshot } from "@/lib/analytics";
 import { getServerConfig } from "@/lib/config";
+import { getNewsHeadlines } from "@/lib/newsFeed";
 import {
   buildTrafficAlerts,
   checkDatabaseMonitors,
@@ -29,11 +30,12 @@ export async function GET(request: NextRequest) {
   }
 
   const generatedAt = new Date().toISOString();
-  const [analyticsResult, website, ssl, databaseMonitors] = await Promise.all([
+  const [analyticsResult, website, ssl, databaseMonitors, newsHeadlines] = await Promise.all([
     getAnalyticsSnapshot(config),
     checkWebsite(config),
     checkSsl(config),
-    checkDatabaseMonitors(config)
+    checkDatabaseMonitors(config),
+    getNewsHeadlines()
   ]);
 
   const payload: WallboardPayload = {
@@ -61,7 +63,8 @@ export async function GET(request: NextRequest) {
       },
       databaseMonitors
     },
-    alerts: []
+    alerts: [],
+    newsHeadlines
   };
 
   payload.alerts = buildTrafficAlerts(payload, config);

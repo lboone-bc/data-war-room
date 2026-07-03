@@ -107,6 +107,86 @@ function useWallboardData() {
   return { payload, error, lastUpdated, reload: load };
 }
 
+type LogSeverity = Severity | "info";
+
+type SystemLogEntry = {
+  id: string;
+  text: string;
+  severity: LogSeverity;
+  at: string;
+};
+
+const LOG_MAX_ENTRIES = 8;
+const AMBIENT_MIN_MS = 120_000;
+const AMBIENT_MAX_MS = 300_000;
+const HEARTBEAT_LINES = [
+  "telemetry nominal",
+  "dashboard refreshed",
+  "signal check complete",
+  "listening on all channels",
+  "no anomalies detected",
+  "baseline steady"
+];
+
+function useSystemLog(payload: WallboardPayload | null) {
+  const [entries, setEntries] = useState<SystemLogEntry[]>([]);
+  const seenAlertIds = useRef<Set<string>>(new Set());
+  const headlineIndex = useRef(0);
+
+  useEffect(() => {
+    if (!payload) return;
+    const fresh = payload.alerts.filter((alert) => !seenAlertIds.current.has(alert.id));
+    if (!fresh.length) return;
+    fresh.forEach((alert) => seenAlertIds.current.add(alert.id));
+    setEntries((current) =>
+      [
+        ...fresh.map((alert) => ({
+          id: `alert-${alert.id}-${Date.now()}`,
+          text: alert.title,
+          severity: alert.severity as LogSeverity,
+          at: new Date().toISOString()
+        })),
+        ...current
+      ].slice(0, LOG_MAX_ENTRIES)
+    );
+  }, [payload]);
+
+  useEffect(() => {
+    let timeoutId: number;
+
+    const scheduleNext = () =>
+      window.setTimeout(tick, AMBIENT_MIN_MS + Math.random() * (AMBIENT_MAX_MS - AMBIENT_MIN_MS));
+
+    function tick() {
+      const headlines = payload?.newsHeadlines ?? [];
+      const useHeadline = headlines.length > 0 && Math.random() < 0.5;
+      const text = useHeadline
+        ? headlines[headlineIndex.current % headlines.length].text
+        : HEARTBEAT_LINES[Math.floor(Math.random() * HEARTBEAT_LINES.length)];
+      if (useHeadline) headlineIndex.current += 1;
+
+      setEntries((current) =>
+        [
+          {
+            id: `ambient-${Date.now()}`,
+            text,
+            severity: "info" as LogSeverity,
+            at: new Date().toISOString()
+          },
+          ...current
+        ].slice(0, LOG_MAX_ENTRIES)
+      );
+
+      timeoutId = scheduleNext();
+    }
+
+    timeoutId = scheduleNext();
+    return () => window.clearTimeout(timeoutId);
+  }, [payload]);
+
+  return entries;
+}
+
 function Panel({
   title,
   icon,
@@ -274,11 +354,19 @@ function FullscreenButton() {
   );
 }
 
-function DatabaseFrame({ payload }: { payload: WallboardPayload }) {
+function DatabaseFrame({
+  payload,
+  logEntries
+}: {
+  payload: WallboardPayload;
+  logEntries: SystemLogEntry[];
+}) {
   const [frameKey, setFrameKey] = useState(0);
   const [lastRefresh, setLastRefresh] = useState(new Date().toISOString());
   const [frameScale, setFrameScale] = useState(1);
   const shellRef = useRef<HTMLDivElement | null>(null);
+  const summaryRef = useRef<HTMLDivElement | null>(null);
+  const logRef = useRef<HTMLDivElement | null>(null);
   const url = payload.config.databaseDashboardUrl;
   const frameViewport = useMemo(
     () => ({
@@ -305,12 +393,20 @@ function DatabaseFrame({ payload }: { payload: WallboardPayload }) {
     const shell = shellRef.current;
     if (!shell) return;
 
+    const FRAME_SHELL_GAP = 10;
+
     const updateScale = () => {
       const rect = shell.getBoundingClientRect();
+      const summaryHeight = summaryRef.current?.getBoundingClientRect().height ?? 0;
+      const logHeight = logRef.current?.getBoundingClientRect().height ?? 0;
+      const reserved =
+        summaryHeight + logHeight + (summaryHeight || logHeight ? FRAME_SHELL_GAP * 2 : 0);
+      const availableHeight = Math.max(0, rect.height - reserved);
+
       const nextScale = Math.min(
         1,
         rect.width / frameViewport.width,
-        rect.height / (frameViewport.height - frameViewport.cropBottom)
+        availableHeight / (frameViewport.height - frameViewport.cropBottom)
       );
       setFrameScale(Number(nextScale.toFixed(3)));
     };
@@ -318,6 +414,8 @@ function DatabaseFrame({ payload }: { payload: WallboardPayload }) {
     updateScale();
     const observer = new ResizeObserver(updateScale);
     observer.observe(shell);
+    if (summaryRef.current) observer.observe(summaryRef.current);
+    if (logRef.current) observer.observe(logRef.current);
     window.addEventListener("resize", updateScale);
 
     return () => {
@@ -357,7 +455,7 @@ function DatabaseFrame({ payload }: { payload: WallboardPayload }) {
               }}
             />
           </div>
-          <div className="database-frame-summary">
+          <div className="database-frame-summary" ref={summaryRef}>
             <div>
               <span>All Monitors</span>
               <strong>
@@ -382,6 +480,9 @@ function DatabaseFrame({ payload }: { payload: WallboardPayload }) {
                   : "pending"}
               </strong>
             </div>
+          </div>
+          <div ref={logRef}>
+            <SystemLog entries={logEntries} />
           </div>
         </div>
       ) : (
@@ -490,6 +591,29 @@ function TrafficPanel({ payload }: { payload: WallboardPayload }) {
   );
 }
 
+function SystemLog({ entries }: { entries: SystemLogEntry[] }) {
+  return (
+    <div className="system-log" role="log" aria-live="off">
+      {entries.length ? (
+        entries.map((entry, index) => (
+          <div
+            key={entry.id}
+            className={`system-log-entry ${entry.severity}${index === 0 ? " is-new" : ""}`}
+          >
+            <span className="system-log-time">{timeLabel(entry.at)}</span>
+            <span className="system-log-text">{entry.text}</span>
+          </div>
+        ))
+      ) : (
+        <div className="system-log-entry info">
+          <span className="system-log-time">{timeLabel(new Date().toISOString())}</span>
+          <span className="system-log-text">system log initializing</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AlertOverlay({ alerts }: { alerts: Alert[] }) {
   const alert = alerts.find((item) => item.severity === "critical") || alerts[0];
   if (!alert) return null;
@@ -544,6 +668,7 @@ function IncidentBanner({
 
 export default function WallboardPage() {
   const { payload, error, lastUpdated, reload } = useWallboardData();
+  const logEntries = useSystemLog(payload);
   const [clock, setClock] = useState(new Date());
 
   useEffect(() => {
@@ -636,7 +761,7 @@ export default function WallboardPage() {
           <TrendGraph payload={payload} />
         </Panel>
 
-        <DatabaseFrame payload={payload} />
+        <DatabaseFrame payload={payload} logEntries={logEntries} />
 
         <GeoPanel payload={payload} />
 

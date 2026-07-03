@@ -29,6 +29,11 @@ export type Alert = {
   audible: boolean;
 };
 
+export type NewsHeadline = {
+  id: string;
+  text: string;
+};
+
 export type FeedState = "live" | "setup" | "degraded";
 
 export type WallboardPayload = {
@@ -83,4 +88,5 @@ export type WallboardPayload = {
     };
   };
   alerts: Alert[];
+  newsHeadlines: NewsHeadline[];
 };
