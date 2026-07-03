@@ -13,8 +13,11 @@ This repo owns a private cinematic monitoring room wallboard for a single landsc
 - The world access map uses GA realtime `countryId` plus `country`; add coordinates to `COUNTRY_COORDINATES` in `lib/analytics.ts` for new countries that need precise placement.
 - Iframe dashboards are fragile. Check vendor support for kiosk/embed URLs before assuming a normal logged-in page can render inside the wallboard.
 - The Site24x7 embed is scaled through `DATABASE_FRAME_VIEWPORT_WIDTH` and `DATABASE_FRAME_VIEWPORT_HEIGHT`; use the current `1024x640` default unless visual QA shows clipping.
+- The `DatabaseFrame` iframe's auto-scale calculation (`updateScale` in `app/wallboard/page.tsx`) must subtract the rendered height of every flex sibling below it (`.database-frame-summary`, `.system-log`) before computing scale, or the iframe overlaps/clips them. If a new element is added to that column, add its ref to the reservation math too.
 - Site24x7 public dashboard dark theme is configured in Site24x7 share settings, not by styling the iframe from this app.
-- Do not embed YallBot/YouTube in v1. Treat it as style inspiration only.
+- Do not embed YallBot/YouTube directly. Its ambient "emergency operations center" feel is realized natively instead, via the `SystemLog` component (real alerts + Hacker News headlines + heartbeat lines) in `app/wallboard/page.tsx` and `lib/newsFeed.ts` — treat that as the actual implementation of the style inspiration, not a placeholder for a future embed.
+- **Any new external API call (GA, Hacker News, or future additions) must follow the caching discipline in `lib/analytics.ts` / `lib/newsFeed.ts`: a generous TTL cache, in-flight-promise de-duplication so concurrent requests share one outstanding fetch, and a silent fallback to the last-good/empty result on failure — never throw, never surface a raw provider error to the UI.** This was learned the hard way: an early version polled GA Realtime aggressively enough to burn ~14,000 tokens in a single clock-hour and exhaust the quota. GA's Realtime token quota resets on the clock hour, not a rolling window from the failure — any quota-style backoff should target the next hour boundary, not a fixed duration.
+- Panels with a fixed-height budget that can shrink (e.g. via a parent grid's `fr` sizing) should gracefully hide non-essential sub-content rather than render an unreadably squeezed sliver — see `.hero-panel`'s `@container` query in `app/globals.css`, which hides the trend sparkline below 275px of panel height instead of showing ~2px bars. Prefer this pattern (CSS container queries scoped to the panel, not viewport media queries) for any future panel content that depends on space freed up by other layout changes.
 
 ## Frontend Direction
 
@@ -26,6 +29,9 @@ This repo owns a private cinematic monitoring room wallboard for a single landsc
 ## Testing Expectations
 
 - Run `npm run typecheck` and `npm run build` before handoff.
+- **Never run `npm run build` while `npm run dev` is also running against this repo** — both write to `.next` and will corrupt each other, breaking the dev server with `MODULE_NOT_FOUND` errors. Stop `dev` first (or skip `build` and rely on `typecheck` + the dev server's hot-reload) if a dev server is already up.
+- **The user typically runs `npm run dev` as their actual local site, not as disposable test infrastructure.** Don't stop a dev server you didn't start yourself without asking, and leave `npm run dev` running when you finish a change rather than tearing it down.
 - Visually inspect `/wallboard` at `1920x1080`; inspect `3840x2160` when practical.
 - Test both demo mode and configured env mode when credentials are available.
 - For audio, verify the visual alert still works when browser autoplay blocks sound.
+- When touching `lib/analytics.ts` or `lib/newsFeed.ts` (or adding a new external call), spot-check that request volume is reasonable — for GA, check the Account data API quota history page in Google Analytics admin.

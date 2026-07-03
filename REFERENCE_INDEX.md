@@ -12,10 +12,14 @@
 
 - Google Analytics Realtime Data API
   - Config: `GA_PROPERTY_ID`, `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`, `GA_CLIENT_EMAIL`, or `GA_PRIVATE_KEY`
-  - Used for active users, event count, top pages, minute trend, and world-map geo activity via `countryId` and `country`.
+  - Used for active users, event count, minute trend, and world-map geo activity via `countryId` and `country`.
   - Realtime also supports `city`; the wallboard uses city-level dots only for cities present in the coordinate table and otherwise falls back to a country-level anchor.
-  - Sources use today's standard GA channel report because GA realtime does not support source/medium dimensions.
-  - Analytics responses are briefly cached to protect quota. Quota exhaustion blanks analytics panels, shows a concise degraded banner/footer message, and does not create a visual/audible alert pop-up.
+  - Top Pages and Sources both use today's standard GA report (not Realtime) — page/source popularity doesn't need to-the-second freshness, and it keeps load off the much smaller Realtime quota.
+  - Implementation: `lib/analytics.ts`. Responses are cached for 3 minutes with in-flight-promise de-duplication (concurrent requests share one fetch instead of each hitting GA). Quota exhaustion blanks analytics panels, shows a concise degraded banner/footer message, and does not create a visual/audible alert pop-up. The backoff after a quota error targets the next clock-hour boundary rather than a fixed duration, since GA's Realtime property-token quota resets on the hour, not on a rolling window from the failed request — confirmed directly from the GA account's Data API quota history log (Admin → Account data API quota history) during a 2026-07-02 incident where an early polling configuration burned ~14,000 Realtime tokens in a single hour.
+- Hacker News public Firebase API
+  - Config: none — no API key required.
+  - Used only for the ambient "system log" feed under the Active Database System panel (`app/wallboard/page.tsx`'s `SystemLog`/`useSystemLog`), which rotates in real HN headlines alongside internal heartbeat lines every 2-5 minutes. Purely decorative — never generates an alert, never blocks rendering, and silently falls back to heartbeat-only lines on failure.
+  - Implementation: `lib/newsFeed.ts`, cached 15 minutes with the same in-flight-dedup/silent-fallback pattern as the GA client.
 - Existing active database dashboard
   - Config: `DATABASE_DASHBOARD_URL`
   - Rendered as a scaled iframe and refreshed on `DATABASE_REFRESH_SECONDS`.
@@ -44,6 +48,7 @@
   - `TRAFFIC_DROP_THRESHOLD`
   - `ALERT_AUDIO_COOLDOWN_SECONDS`
 - Browser audio requires the `arm audio` button to be pressed once per signage session. The button plays a short test chirp when armed so signage audio can be verified.
+- The ambient "system log" (Active Database System panel) is a separate, non-audible, non-alerting display of the same `alerts` array plus decorative content — it does not affect audible-alert logic or cooldowns.
 
 ## Future Work
 

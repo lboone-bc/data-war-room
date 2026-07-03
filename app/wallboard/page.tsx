@@ -132,6 +132,8 @@ function useSystemLog(payload: WallboardPayload | null) {
   const [entries, setEntries] = useState<SystemLogEntry[]>([]);
   const seenAlertIds = useRef<Set<string>>(new Set());
   const headlineIndex = useRef(0);
+  const payloadRef = useRef(payload);
+  payloadRef.current = payload;
 
   useEffect(() => {
     if (!payload) return;
@@ -158,7 +160,7 @@ function useSystemLog(payload: WallboardPayload | null) {
       window.setTimeout(tick, AMBIENT_MIN_MS + Math.random() * (AMBIENT_MAX_MS - AMBIENT_MIN_MS));
 
     function tick() {
-      const headlines = payload?.newsHeadlines ?? [];
+      const headlines = payloadRef.current?.newsHeadlines ?? [];
       const useHeadline = headlines.length > 0 && Math.random() < 0.5;
       const text = useHeadline
         ? headlines[headlineIndex.current % headlines.length].text
@@ -182,7 +184,11 @@ function useSystemLog(payload: WallboardPayload | null) {
 
     timeoutId = scheduleNext();
     return () => window.clearTimeout(timeoutId);
-  }, [payload]);
+    // Deliberately empty: this timer must survive across polls (payload
+    // changes identity every 30s) rather than being torn down and
+    // restarted before its 2-5 minute delay ever elapses. It reads the
+    // latest payload via payloadRef instead of closing over the prop.
+  }, []);
 
   return entries;
 }
