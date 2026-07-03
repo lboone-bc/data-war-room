@@ -23,7 +23,7 @@ import { feature } from "topojson-client";
 import type { Alert, Severity, WallboardPayload } from "@/lib/types";
 import worldAtlas from "world-atlas/countries-110m.json";
 
-const POLL_MS = 15000;
+const POLL_MS = 30000;
 const MAP_VIEWBOX_HEIGHT = 56;
 const mapTopology = worldAtlas as unknown as {
   objects: {

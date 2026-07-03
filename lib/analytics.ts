@@ -9,8 +9,13 @@ type AnalyticsResult = {
   error?: string;
 };
 
-const ANALYTICS_CACHE_MS = 60_000;
-const GA_QUOTA_BACKOFF_MS = 55 * 60_000;
+const ANALYTICS_CACHE_MS = 180_000;
+// GA's Realtime API property-token quota resets on the clock hour rather than
+// on a rolling window from the failed request, so the backoff targets the
+// next hour boundary (plus a small buffer for clock skew) instead of a fixed
+// duration. A fixed duration can retry too early (still inside the same
+// exhausted hour bucket) or wait longer than necessary past the reset.
+const GA_QUOTA_BACKOFF_BUFFER_MS = 90_000;
 const GA_QUOTA_MESSAGE =
   "GA quota exhausted; realtime analytics blank until the quota resets.";
 const GA_UNAVAILABLE_MESSAGE =
@@ -19,6 +24,14 @@ const GA_UNAVAILABLE_MESSAGE =
 let cachedAnalyticsResult: AnalyticsResult | null = null;
 let cachedAnalyticsAt = 0;
 let quotaBackoffUntil = 0;
+let pendingFetch: Promise<AnalyticsResult> | null = null;
+
+function nextHourBoundaryMs(): number {
+  const next = new Date();
+  next.setMinutes(0, 0, 0);
+  next.setHours(next.getHours() + 1);
+  return next.getTime();
+}
 
 const COUNTRY_COORDINATES: Record<string, { longitude: number; latitude: number }> = {
   AR: { longitude: -63.6, latitude: -38.4 },
@@ -205,32 +218,56 @@ export async function getAnalyticsSnapshot(
     return cachedAnalyticsResult;
   }
 
+  // Multiple wallboard requests can land inside the same cache-miss window
+  // (concurrent tabs, dev-mode double effects, overlapping polls). Without
+  // this, each one would independently fire its own batch of GA calls;
+  // sharing the one in-flight fetch caps it at a single batch per refresh.
+  if (pendingFetch) {
+    return pendingFetch;
+  }
+
+  pendingFetch = fetchAnalyticsFromGa(config).finally(() => {
+    pendingFetch = null;
+  });
+
+  return pendingFetch;
+}
+
+async function fetchAnalyticsFromGa(config: ServerConfig): Promise<AnalyticsResult> {
   try {
     const client = new BetaAnalyticsDataClient(getCredentialConfig());
+    const propertyId = config.gaPropertyId as string;
 
     const [summaryRows, trendRows, pageRows, sourceRows, geoRows] =
       await Promise.all([
-        runRealtimeReport(client, config.gaPropertyId, {
+        runRealtimeReport(client, propertyId, {
           metrics: [{ name: "activeUsers" }, { name: "eventCount" }],
           dimensions: []
         }),
-        runRealtimeReport(client, config.gaPropertyId, {
+        runRealtimeReport(client, propertyId, {
           dimensions: [{ name: "minutesAgo" }],
           metrics: [{ name: "activeUsers" }],
           limit: 30
         }),
-        runRealtimeReport(client, config.gaPropertyId, {
+        // Page popularity doesn't need realtime precision, and the Realtime
+        // API's per-property token quota is far more limited than the
+        // standard Reporting API's, so this uses a same-day standard report
+        // (like Sources below) instead of a second dimensioned realtime call.
+        runStandardReport(client, propertyId, {
+          dateRanges: [{ startDate: "today", endDate: "today" }],
           dimensions: [{ name: "unifiedScreenName" }],
-          metrics: [{ name: "activeUsers" }],
+          metrics: [{ name: "screenPageViews" }],
+          orderBys: [{ metric: { metricName: "screenPageViews" }, desc: true }],
           limit: 5
         }),
-        runStandardReport(client, config.gaPropertyId, {
+        runStandardReport(client, propertyId, {
           dateRanges: [{ startDate: "today", endDate: "today" }],
           dimensions: [{ name: "sessionDefaultChannelGroup" }],
           metrics: [{ name: "sessions" }],
+          orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
           limit: 5
         }),
-        runRealtimeReport(client, config.gaPropertyId, {
+        runRealtimeReport(client, propertyId, {
           dimensions: [{ name: "countryId" }, { name: "country" }, { name: "city" }],
           metrics: [{ name: "activeUsers" }],
           limit: 12
@@ -256,7 +293,7 @@ export async function getAnalyticsSnapshot(
 
     const topPages: RankedMetric[] = pageRows.map((row) => ({
       label: dimensionValue(row),
-      value: `${metricValue(row)} users`
+      value: `${metricValue(row)} views`
     }));
 
     const topSources: RankedMetric[] = sourceRows.map((row) => ({
@@ -304,7 +341,7 @@ export async function getAnalyticsSnapshot(
       ? GA_QUOTA_MESSAGE
       : GA_UNAVAILABLE_MESSAGE;
     if (isQuotaError(rawMessage)) {
-      quotaBackoffUntil = Date.now() + GA_QUOTA_BACKOFF_MS;
+      quotaBackoffUntil = nextHourBoundaryMs() + GA_QUOTA_BACKOFF_BUFFER_MS;
     }
     return cacheResult(degradedAnalytics(safeMessage));
   }
