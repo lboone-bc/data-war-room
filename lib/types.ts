@@ -42,6 +42,12 @@ export type LiveStreamState = {
   live: boolean;
   videoId: string | null;
   channelUrl: string;
+  // Set only when the primary channel isn't live and the fallback channel
+  // (LiveNOW from Fox by default) currently is — see app/api/wallboard/route.ts.
+  fallback: {
+    videoId: string;
+    channelUrl: string;
+  } | null;
 };
 
 export type WallboardPayload = {

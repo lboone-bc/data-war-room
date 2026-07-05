@@ -17,8 +17,8 @@ export type ServerConfig = {
   audioEnabled: boolean;
   audioCooldownSeconds: number;
   foxNewsRssUrl: string;
-  youtubeLiveChannelId: string | null;
-  youtubeLiveChannelHandle: string;
+  youtubeLiveChannelHandle: string | null;
+  youtubeFallbackChannelHandle: string | null;
 };
 
 function numberFromEnv(name: string, fallback: number) {
@@ -57,7 +57,10 @@ export function getServerConfig(): ServerConfig {
     audioEnabled: boolFromEnv("ALERT_AUDIO_ENABLED", true),
     audioCooldownSeconds: numberFromEnv("ALERT_AUDIO_COOLDOWN_SECONDS", 180),
     foxNewsRssUrl: process.env.FOX_NEWS_RSS_URL || "https://moxie.foxnews.com/google-publisher/latest.xml",
-    youtubeLiveChannelId: process.env.YOUTUBE_LIVE_CHANNEL_ID || null,
-    youtubeLiveChannelHandle: process.env.YOUTUBE_LIVE_CHANNEL_HANDLE || "@BiltmoreChurch"
+    youtubeLiveChannelHandle: process.env.YOUTUBE_LIVE_CHANNEL_HANDLE || null,
+    // Defaults to LiveNOW from Fox (24/7 news livestream) so the panel has a
+    // sensible fallback out of the box when the primary channel isn't live;
+    // set to an empty string to disable the fallback entirely.
+    youtubeFallbackChannelHandle: process.env.YOUTUBE_FALLBACK_CHANNEL_HANDLE || "@livenowfox"
   };
 }

@@ -41,10 +41,18 @@ export async function GET(request: NextRequest) {
       getFoxHeadlines(config.foxNewsRssUrl),
       // Missing config stays quiet (no network call, no setup alert) — same
       // convention as DATABASE_MONITORS_STATUS_URL below.
-      config.youtubeLiveChannelId
-        ? getYoutubeLiveStatus(config.youtubeLiveChannelId)
+      config.youtubeLiveChannelHandle
+        ? getYoutubeLiveStatus(config.youtubeLiveChannelHandle)
         : Promise.resolve({ live: false, videoId: null })
     ]);
+
+  // Only spend a second request on the fallback channel when the primary
+  // one isn't live — most of the time this isn't needed at all, and it's
+  // sequenced after the Promise.all above since it depends on that result.
+  const youtubeFallback =
+    !youtubeLive.live && config.youtubeFallbackChannelHandle
+      ? await getYoutubeLiveStatus(config.youtubeFallbackChannelHandle)
+      : { live: false, videoId: null };
   // Interleave so the ambient ticker rotation (app/wallboard/page.tsx) isn't
   // dominated by whichever source happens to respond with more items.
   const newsHeadlines = hnHeadlines
@@ -81,10 +89,17 @@ export async function GET(request: NextRequest) {
     alerts: [],
     newsHeadlines,
     liveStream: {
-      enabled: Boolean(config.youtubeLiveChannelId),
+      enabled: Boolean(config.youtubeLiveChannelHandle),
       live: youtubeLive.live,
       videoId: youtubeLive.videoId,
-      channelUrl: `https://www.youtube.com/${config.youtubeLiveChannelHandle}`
+      channelUrl: `https://www.youtube.com/${config.youtubeLiveChannelHandle ?? ""}`,
+      fallback:
+        youtubeFallback.live && youtubeFallback.videoId
+          ? {
+              videoId: youtubeFallback.videoId,
+              channelUrl: `https://www.youtube.com/${config.youtubeFallbackChannelHandle}`
+            }
+          : null
     }
   };
 

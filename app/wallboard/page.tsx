@@ -693,9 +693,9 @@ function LiveStreamPanel({ payload }: { payload: WallboardPayload }) {
 
   if (!liveStream.enabled) return null;
 
-  return (
-    <Panel title="Live Stream" icon={<Youtube size={18} />} className="livestream-panel">
-      {liveStream.live && liveStream.videoId ? (
+  if (liveStream.live && liveStream.videoId) {
+    return (
+      <Panel title="Live Stream" icon={<Youtube size={18} />} className="livestream-panel">
         <div className="livestream-frame">
           <iframe
             key={liveStream.videoId}
@@ -707,13 +707,39 @@ function LiveStreamPanel({ payload }: { payload: WallboardPayload }) {
             <Radar size={11} /> live
           </span>
         </div>
-      ) : (
-        <div className="livestream-idle">
-          <Youtube size={30} />
-          <strong>Not currently live</strong>
-          <span>{liveStream.channelUrl.replace("https://www.", "")}</span>
+      </Panel>
+    );
+  }
+
+  // Biltmore isn't live — fall back to a 24/7 news livestream (LiveNOW from
+  // Fox by default) so the panel isn't dark most of the week. Badge is
+  // visually distinct (amber, explicit source name) so it never reads as
+  // "Biltmore is live" — this is filler content, not the real thing.
+  if (liveStream.fallback) {
+    return (
+      <Panel title="Live Stream" icon={<Youtube size={18} />} className="livestream-panel">
+        <div className="livestream-frame">
+          <iframe
+            key={liveStream.fallback.videoId}
+            src={`https://www.youtube.com/embed/${liveStream.fallback.videoId}?autoplay=1&mute=1&playsinline=1&modestbranding=1&rel=0`}
+            title="LiveNOW from Fox"
+            allow="autoplay; encrypted-media; picture-in-picture"
+          />
+          <span className="livestream-badge fallback">
+            <Radar size={11} /> live now — fox news
+          </span>
         </div>
-      )}
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel title="Live Stream" icon={<Youtube size={18} />} className="livestream-panel">
+      <div className="livestream-idle">
+        <Youtube size={30} />
+        <strong>Not currently live</strong>
+        <span>{liveStream.channelUrl.replace("https://www.", "")}</span>
+      </div>
     </Panel>
   );
 }
@@ -917,13 +943,14 @@ export default function WallboardPage() {
           <TrendGraph payload={payload} />
         </Panel>
 
-        <DatabaseFrame payload={payload} />
+        <div className="database-column">
+          <DatabaseFrame payload={payload} />
+          <LiveStreamPanel payload={payload} />
+        </div>
 
         <GeoPanel payload={payload} />
 
         <TrafficPanel payload={payload} />
-
-        <LiveStreamPanel payload={payload} />
       </section>
 
       <div className="ticker-bar">
