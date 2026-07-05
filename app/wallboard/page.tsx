@@ -293,6 +293,12 @@ function AudioAlert({ alerts, enabled, cooldownSeconds }: {
   const lastPlayedRef = useRef(0);
   const [unlocked, setUnlocked] = useState(false);
   const seriousAlert = alerts.find((alert) => alert.id === SERIOUS_ALERT_ID);
+  // Every 30s poll produces a brand-new `alerts` array (and thus a new
+  // `seriousAlert` object reference) even when nothing actually changed, so
+  // the repeat-siren effect below must key off this stable boolean rather
+  // than the object itself — otherwise it tears down and restarts its
+  // setInterval every poll, breaking the documented fixed 12s cadence.
+  const seriousAlertActive = Boolean(seriousAlert);
   const audibleAlert = alerts.find(
     (alert) => alert.audible && alert.severity === "critical" && alert.id !== SERIOUS_ALERT_ID
   );
@@ -319,12 +325,12 @@ function AudioAlert({ alerts, enabled, cooldownSeconds }: {
   // enough to keep sounding on a short fixed interval until it clears,
   // rather than waiting out the normal 180s cooldown between chirps.
   useEffect(() => {
-    if (!enabled || !seriousAlert || !unlocked || !audioRef.current) return;
+    if (!enabled || !seriousAlertActive || !unlocked || !audioRef.current) return;
     const context = audioRef.current;
     playAlarmPulse(context);
     const interval = window.setInterval(() => playAlarmPulse(context), SERIOUS_ALERT_REPEAT_MS);
     return () => window.clearInterval(interval);
-  }, [enabled, seriousAlert, unlocked]);
+  }, [enabled, seriousAlertActive, unlocked]);
 
   return (
     <button className="audio-button" onClick={unlock} type="button" title="Arm and test alert audio">
@@ -544,8 +550,12 @@ function DatabaseFrame({
 
 type ProjectedGeoPoint = WallboardPayload["analytics"]["geo"][number] & { x: number; y: number };
 
-function mapPointKey(point: { countryCode?: string; region: string; longitude: number; latitude: number }) {
-  return `${point.countryCode || point.region}-${point.longitude}-${point.latitude}`;
+// Multiple distinct regions can share one coordinate (e.g. several cities not
+// in COUNTRY_COORDINATES all fall back to the same country-level anchor), so
+// coordinates alone aren't a unique key — city/region must be included or
+// those entries collide in the `Map` below and all but one silently vanish.
+function mapPointKey(point: { countryCode?: string; region: string; city?: string | null; longitude: number; latitude: number }) {
+  return `${point.countryCode || point.region}-${point.city ?? point.region}-${point.longitude}-${point.latitude}`;
 }
 
 const MAP_POINT_FADE_MS = 700;

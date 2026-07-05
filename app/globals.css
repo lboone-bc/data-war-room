@@ -398,6 +398,8 @@ a {
   border: 1px solid var(--line);
   background: rgba(2, 8, 13, 0.52);
   padding: 12px;
+  overflow: hidden;
+  container-type: inline-size;
 }
 
 .mini-metrics svg {
@@ -407,7 +409,13 @@ a {
 .mini-metrics strong {
   margin-top: 10px;
   min-height: 1.05em;
-  font-size: clamp(21px, 2.2vw, 40px);
+  /* Sized off the stat box's own rendered width (cqw), not the viewport
+     (vw) — this box sits four grid levels deep (wall-grid > hero-panel >
+     metric-row > mini-metrics), so its actual pixel width has little
+     relation to overall viewport width. vw let long numbers keep growing
+     with screen size even as the box itself stayed comparatively narrow,
+     spilling the digits past the box border. */
+  font-size: clamp(16px, 16cqw, 40px);
   font-variant-numeric: tabular-nums;
 }
 
