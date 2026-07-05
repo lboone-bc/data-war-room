@@ -9,6 +9,7 @@ import {
   checkWebsite
 } from "@/lib/systemStatus";
 import type { WallboardPayload } from "@/lib/types";
+import { getYoutubeLiveStatus } from "@/lib/youtubeLive";
 
 export const dynamic = "force-dynamic";
 
@@ -30,14 +31,19 @@ export async function GET(request: NextRequest) {
   }
 
   const generatedAt = new Date().toISOString();
-  const [analyticsResult, website, ssl, databaseMonitors, hnHeadlines, foxHeadlines] =
+  const [analyticsResult, website, ssl, databaseMonitors, hnHeadlines, foxHeadlines, youtubeLive] =
     await Promise.all([
       getAnalyticsSnapshot(config),
       checkWebsite(config),
       checkSsl(config),
       checkDatabaseMonitors(config),
       getNewsHeadlines(),
-      getFoxHeadlines(config.foxNewsRssUrl)
+      getFoxHeadlines(config.foxNewsRssUrl),
+      // Missing config stays quiet (no network call, no setup alert) — same
+      // convention as DATABASE_MONITORS_STATUS_URL below.
+      config.youtubeLiveChannelId
+        ? getYoutubeLiveStatus(config.youtubeLiveChannelId)
+        : Promise.resolve({ live: false, videoId: null })
     ]);
   // Interleave so the ambient ticker rotation (app/wallboard/page.tsx) isn't
   // dominated by whichever source happens to respond with more items.
@@ -73,7 +79,13 @@ export async function GET(request: NextRequest) {
       databaseMonitors
     },
     alerts: [],
-    newsHeadlines
+    newsHeadlines,
+    liveStream: {
+      enabled: Boolean(config.youtubeLiveChannelId),
+      live: youtubeLive.live,
+      videoId: youtubeLive.videoId,
+      channelUrl: `https://www.youtube.com/${config.youtubeLiveChannelHandle}`
+    }
   };
 
   payload.alerts = buildTrafficAlerts(payload, config);

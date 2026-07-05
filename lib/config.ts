@@ -17,6 +17,8 @@ export type ServerConfig = {
   audioEnabled: boolean;
   audioCooldownSeconds: number;
   foxNewsRssUrl: string;
+  youtubeLiveChannelId: string | null;
+  youtubeLiveChannelHandle: string;
 };
 
 function numberFromEnv(name: string, fallback: number) {
@@ -54,6 +56,8 @@ export function getServerConfig(): ServerConfig {
     trafficDropThreshold: numberFromEnv("TRAFFIC_DROP_THRESHOLD", 80),
     audioEnabled: boolFromEnv("ALERT_AUDIO_ENABLED", true),
     audioCooldownSeconds: numberFromEnv("ALERT_AUDIO_COOLDOWN_SECONDS", 180),
-    foxNewsRssUrl: process.env.FOX_NEWS_RSS_URL || "https://moxie.foxnews.com/google-publisher/latest.xml"
+    foxNewsRssUrl: process.env.FOX_NEWS_RSS_URL || "https://moxie.foxnews.com/google-publisher/latest.xml",
+    youtubeLiveChannelId: process.env.YOUTUBE_LIVE_CHANNEL_ID || null,
+    youtubeLiveChannelHandle: process.env.YOUTUBE_LIVE_CHANNEL_HANDLE || "@BiltmoreChurch"
   };
 }

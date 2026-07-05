@@ -18,7 +18,7 @@
   - Implementation: `lib/analytics.ts`. Responses are cached for 3 minutes with in-flight-promise de-duplication (concurrent requests share one fetch instead of each hitting GA). Quota exhaustion blanks analytics panels, shows a concise degraded banner/footer message, and does not create a visual/audible alert pop-up. The backoff after a quota error targets the next clock-hour boundary rather than a fixed duration, since GA's Realtime property-token quota resets on the hour, not on a rolling window from the failed request — confirmed directly from the GA account's Data API quota history log (Admin → Account data API quota history) during a 2026-07-02 incident where an early polling configuration burned ~14,000 Realtime tokens in a single hour.
 - Hacker News public Firebase API
   - Config: none — no API key required.
-  - Used only for the ambient "system log" feed under the Active Database System panel (`app/wallboard/page.tsx`'s `SystemLog`/`useSystemLog`), which rotates in real HN headlines alongside internal heartbeat lines every 2-5 minutes. Purely decorative — never generates an alert, never blocks rendering, and silently falls back to heartbeat-only lines on failure.
+  - Used only for the ambient "system log" ticker (`app/wallboard/page.tsx`'s `SystemLog`/`useSystemLog`), which spans the full width of the wallboard below the panel grid and rotates in real HN headlines alongside internal heartbeat lines every 2-5 minutes. Purely decorative — never generates an alert, never blocks rendering, and silently falls back to heartbeat-only lines on failure.
   - Implementation: `lib/newsFeed.ts`, cached 15 minutes with the same in-flight-dedup/silent-fallback pattern as the GA client.
 - Existing active database dashboard
   - Config: `DATABASE_DASHBOARD_URL`
@@ -32,6 +32,9 @@
 - Website health and SSL checks
   - Config: `WEBSITE_HEALTHCHECK_ENABLED`, `WEBSITE_HEALTHCHECK_URL`, `WEBSITE_HOSTNAME`
   - Website health checks are passive by default; enable explicitly before sending synthetic `HEAD` requests to the public website.
+- YouTube live status (Live Stream panel)
+  - Config: `YOUTUBE_LIVE_CHANNEL_ID`, `YOUTUBE_LIVE_CHANNEL_HANDLE`
+  - No API key required — `lib/youtubeLive.ts` scrapes the channel's `/live` page canonical link to detect an active broadcast, cached 45 seconds with the same silent-fallback discipline as every other external call. When live, shows a muted autoplaying embed with a "LIVE" badge; when not, a quiet "Not currently live" state. Missing config means the panel doesn't render at all rather than showing a setup warning.
 
 ## Security And Access
 
@@ -48,7 +51,7 @@
   - `TRAFFIC_DROP_THRESHOLD`
   - `ALERT_AUDIO_COOLDOWN_SECONDS`
 - Browser audio requires the `arm audio` button to be pressed once per signage session. The button plays a short test chirp when armed so signage audio can be verified.
-- The ambient "system log" (Active Database System panel) is a separate, non-audible, non-alerting display of the same `alerts` array plus decorative content — it does not affect audible-alert logic or cooldowns.
+- The ambient "system log" (full-width ticker bar below the panel grid) is a separate, non-audible, non-alerting display of the same `alerts` array plus decorative content — it does not affect audible-alert logic or cooldowns.
 
 ## Future Work
 

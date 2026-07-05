@@ -15,7 +15,8 @@ import {
   ShieldCheck,
   Signal,
   Volume2,
-  Wifi
+  Wifi,
+  Youtube
 } from "lucide-react";
 import { geoEquirectangular, geoPath } from "d3-geo";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -401,19 +402,11 @@ function FullscreenButton() {
   );
 }
 
-function DatabaseFrame({
-  payload,
-  logEntries
-}: {
-  payload: WallboardPayload;
-  logEntries: SystemLogEntry[];
-}) {
+function DatabaseFrame({ payload }: { payload: WallboardPayload }) {
   const [frameKey, setFrameKey] = useState(0);
   const [lastRefresh, setLastRefresh] = useState(new Date().toISOString());
   const [frameScale, setFrameScale] = useState(1);
   const shellRef = useRef<HTMLDivElement | null>(null);
-  const summaryRef = useRef<HTMLDivElement | null>(null);
-  const logRef = useRef<HTMLDivElement | null>(null);
   const url = payload.config.databaseDashboardUrl;
   const frameViewport = useMemo(
     () => ({
@@ -440,20 +433,11 @@ function DatabaseFrame({
     const shell = shellRef.current;
     if (!shell) return;
 
-    const FRAME_SHELL_GAP = 10;
-
     const updateScale = () => {
       const rect = shell.getBoundingClientRect();
-      const summaryHeight = summaryRef.current?.getBoundingClientRect().height ?? 0;
-      const logHeight = logRef.current?.getBoundingClientRect().height ?? 0;
       const shellStyle = window.getComputedStyle(shell);
       const shellPadding = parseFloat(shellStyle.paddingTop) + parseFloat(shellStyle.paddingBottom);
-      const reserved =
-        summaryHeight +
-        logHeight +
-        shellPadding +
-        (summaryHeight || logHeight ? FRAME_SHELL_GAP * 2 : 0);
-      const availableHeight = Math.max(0, rect.height - reserved);
+      const availableHeight = Math.max(0, rect.height - shellPadding);
 
       const nextScale = Math.min(
         1,
@@ -466,8 +450,6 @@ function DatabaseFrame({
     updateScale();
     const observer = new ResizeObserver(updateScale);
     observer.observe(shell);
-    if (summaryRef.current) observer.observe(summaryRef.current);
-    if (logRef.current) observer.observe(logRef.current);
     window.addEventListener("resize", updateScale);
 
     return () => {
@@ -506,35 +488,6 @@ function DatabaseFrame({
                 transform: `scale(${frameScale})`
               }}
             />
-          </div>
-          <div className="database-frame-summary" ref={summaryRef}>
-            <div>
-              <span>All Monitors</span>
-              <strong>
-                {payload.systems.databaseMonitors.downCount === null
-                  ? "nominal"
-                  : `${payload.systems.databaseMonitors.downCount} down`}
-              </strong>
-            </div>
-            <div>
-              <span>Website Check</span>
-              <strong>
-                {payload.systems.website.latencyMs
-                  ? `${payload.systems.website.latencyMs}ms`
-                  : "passive"}
-              </strong>
-            </div>
-            <div>
-              <span>SSL</span>
-              <strong>
-                {payload.systems.ssl.daysRemaining
-                  ? `${payload.systems.ssl.daysRemaining}d`
-                  : "pending"}
-              </strong>
-            </div>
-          </div>
-          <div ref={logRef}>
-            <SystemLog entries={logEntries} />
           </div>
         </div>
       ) : (
@@ -724,6 +677,43 @@ function TrafficPanel({ payload }: { payload: WallboardPayload }) {
           </div>
         </section>
       </div>
+    </Panel>
+  );
+}
+
+// Live/offline detection happens server-side (lib/youtubeLive.ts) via a
+// canonical-link scrape, no YouTube Data API key needed. Missing
+// YOUTUBE_LIVE_CHANNEL_ID stays quiet (panel doesn't render) rather than
+// showing a setup warning, matching the DATABASE_MONITORS_STATUS_URL
+// convention. Video is muted by default (`mute=1`) since this is ambient
+// visual-only signage — matches the room's existing "no sound unless armed"
+// posture for anything that isn't an explicit alert tone.
+function LiveStreamPanel({ payload }: { payload: WallboardPayload }) {
+  const { liveStream } = payload;
+
+  if (!liveStream.enabled) return null;
+
+  return (
+    <Panel title="Live Stream" icon={<Youtube size={18} />} className="livestream-panel">
+      {liveStream.live && liveStream.videoId ? (
+        <div className="livestream-frame">
+          <iframe
+            key={liveStream.videoId}
+            src={`https://www.youtube.com/embed/${liveStream.videoId}?autoplay=1&mute=1&playsinline=1&modestbranding=1&rel=0`}
+            title="Biltmore Church live stream"
+            allow="autoplay; encrypted-media; picture-in-picture"
+          />
+          <span className="livestream-badge">
+            <Radar size={11} /> live
+          </span>
+        </div>
+      ) : (
+        <div className="livestream-idle">
+          <Youtube size={30} />
+          <strong>Not currently live</strong>
+          <span>{liveStream.channelUrl.replace("https://www.", "")}</span>
+        </div>
+      )}
     </Panel>
   );
 }
@@ -927,12 +917,18 @@ export default function WallboardPage() {
           <TrendGraph payload={payload} />
         </Panel>
 
-        <DatabaseFrame payload={payload} logEntries={logEntries} />
+        <DatabaseFrame payload={payload} />
 
         <GeoPanel payload={payload} />
 
         <TrafficPanel payload={payload} />
+
+        <LiveStreamPanel payload={payload} />
       </section>
+
+      <div className="ticker-bar">
+        <SystemLog entries={logEntries} />
+      </div>
 
       <footer className="wall-footer">
         <span>{payload.mode === "live" ? "live telemetry" : `${payload.mode} telemetry`}</span>

@@ -37,6 +37,13 @@ export type NewsHeadline = {
 
 export type FeedState = "live" | "setup" | "degraded";
 
+export type LiveStreamState = {
+  enabled: boolean;
+  live: boolean;
+  videoId: string | null;
+  channelUrl: string;
+};
+
 export type WallboardPayload = {
   generatedAt: string;
   mode: FeedState;
@@ -90,4 +97,5 @@ export type WallboardPayload = {
   };
   alerts: Alert[];
   newsHeadlines: NewsHeadline[];
+  liveStream: LiveStreamState;
 };

@@ -276,7 +276,11 @@ a {
   grid-template-columns: 1fr 1fr 0.95fr 0.95fr 0.55fr;
   grid-template-rows: minmax(200px, 0.9fr) 1.55fr 0.75fr;
   gap: 14px;
-  height: calc(100vh - 224px);
+  /* 224px = header + incident banner + footer + wallboard padding (see
+     .command-header/.incident/.wall-footer/.wallboard); +48px reserves the
+     full-width .ticker-bar (14px margin-top + 34px height) added below the
+     grid. Keep both in sync if either block's height changes. */
+  height: calc(100vh - 272px);
   min-height: 0;
 }
 
@@ -343,6 +347,64 @@ a {
 .traffic-panel {
   grid-column: 5 / 6;
   grid-row: 1 / 4;
+}
+
+/* database-panel only spans rows 1-2 of the 3-row grid, leaving cols 3-4 of
+   row 3 as the one open cell — this panel fills exactly that, no other
+   panel's placement needs to change. */
+.livestream-panel {
+  grid-column: 3 / 5;
+  grid-row: 3;
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr);
+}
+
+.livestream-frame {
+  position: relative;
+  min-height: 0;
+}
+
+.livestream-frame iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.livestream-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  background: rgba(0, 6, 10, 0.72);
+  border: 1px solid var(--red);
+  color: var(--red);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.livestream-idle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  color: var(--muted);
+}
+
+.livestream-idle strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.livestream-idle span {
+  font-size: 12px;
 }
 
 .metric-row {
@@ -533,47 +595,19 @@ a {
     0 14px 34px rgba(0, 0, 0, 0.3);
 }
 
-.database-frame-summary {
-  flex: 1 1 auto;
-  width: calc(100% - 20px);
-  min-height: 56px;
-  margin: 0 10px;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
+/* .database-frame-summary (All Monitors / Website Check / SSL stat boxes)
+   was removed 2026-07-05 to free up room in the Active Database System
+   panel; downCount is still surfaced via the Website Pulse mini-metrics tile. */
 
-.database-frame-summary div {
-  min-width: 0;
-  border: 1px solid rgba(111, 231, 255, 0.16);
-  background: rgba(2, 8, 13, 0.58);
-  padding: 9px 10px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.database-frame-summary span {
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.database-frame-summary strong {
-  margin-top: 5px;
-  color: var(--text);
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-  text-transform: uppercase;
+.ticker-bar {
+  margin-top: 14px;
+  height: 34px;
 }
 
 .system-log {
-  flex: 0 0 auto;
-  width: calc(100% - 20px);
-  height: 34px;
-  margin: 0 10px;
-  padding: 0 10px;
+  width: 100%;
+  height: 100%;
+  padding: 0 14px;
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -1034,8 +1068,15 @@ a {
     padding: 6px 10px;
   }
 
+  .ticker-bar {
+    margin-top: 8px;
+    height: 28px;
+  }
+
   .wall-grid {
-    height: calc(100vh - 156px);
+    /* +36px reserves the shrunk .ticker-bar (8px margin-top + 28px height)
+       above, same reasoning as the base .wall-grid rule. */
+    height: calc(100vh - 192px);
     gap: 10px;
   }
 
