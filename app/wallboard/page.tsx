@@ -21,7 +21,7 @@ import {
 import { geoEquirectangular, geoPath } from "d3-geo";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { feature } from "topojson-client";
-import type { Alert, Severity, WallboardPayload } from "@/lib/types";
+import type { Alert, Severity, SocialPost, WallboardPayload } from "@/lib/types";
 import worldAtlas from "world-atlas/countries-110m.json";
 
 const POLL_MS = 30000;
@@ -129,9 +129,21 @@ const HEARTBEAT_LINES = [
   "baseline steady"
 ];
 
+const SOCIAL_POST_EXCERPT_MAX = 140;
+
+function socialPostExcerpt(post: SocialPost) {
+  const label = post.platform === "instagram" ? "Instagram" : "Facebook";
+  const text =
+    post.text.length > SOCIAL_POST_EXCERPT_MAX
+      ? `${post.text.slice(0, SOCIAL_POST_EXCERPT_MAX).trimEnd()}…`
+      : post.text;
+  return `${label}: ${text}`;
+}
+
 function useSystemLog(payload: WallboardPayload | null) {
   const [entries, setEntries] = useState<SystemLogEntry[]>([]);
   const seenAlertIds = useRef<Set<string>>(new Set());
+  const seenSocialPostIds = useRef<Set<string>>(new Set());
   const headlineIndex = useRef(0);
   const payloadRef = useRef(payload);
   payloadRef.current = payload;
@@ -154,6 +166,29 @@ function useSystemLog(payload: WallboardPayload | null) {
     );
   }, [payload]);
 
+  // Surfaces a new Instagram/Facebook post immediately (like a real alert)
+  // instead of waiting for the 2-5 minute ambient rotation below — this is
+  // the "notify when a new posting goes live" behavior. Still ticker-only:
+  // it never touches payload.alerts or the audible-alert system, same as
+  // the rest of this ambient log.
+  useEffect(() => {
+    if (!payload) return;
+    const fresh = payload.socialPosts.filter((post) => !seenSocialPostIds.current.has(post.id));
+    if (!fresh.length) return;
+    fresh.forEach((post) => seenSocialPostIds.current.add(post.id));
+    setEntries((current) =>
+      [
+        ...fresh.map((post) => ({
+          id: `social-${post.id}`,
+          text: `New post — ${socialPostExcerpt(post)}`,
+          severity: "watch" as LogSeverity,
+          at: post.postedAt ?? new Date().toISOString()
+        })),
+        ...current
+      ].slice(0, LOG_MAX_ENTRIES)
+    );
+  }, [payload]);
+
   useEffect(() => {
     let timeoutId: number;
 
@@ -161,12 +196,12 @@ function useSystemLog(payload: WallboardPayload | null) {
       window.setTimeout(tick, AMBIENT_MIN_MS + Math.random() * (AMBIENT_MAX_MS - AMBIENT_MIN_MS));
 
     function tick() {
-      const headlines = payloadRef.current?.newsHeadlines ?? [];
-      const useHeadline = headlines.length > 0 && Math.random() < 0.5;
-      const text = useHeadline
-        ? headlines[headlineIndex.current % headlines.length].text
+      const posts = payloadRef.current?.socialPosts ?? [];
+      const usePost = posts.length > 0 && Math.random() < 0.5;
+      const text = usePost
+        ? socialPostExcerpt(posts[headlineIndex.current % posts.length])
         : HEARTBEAT_LINES[Math.floor(Math.random() * HEARTBEAT_LINES.length)];
-      if (useHeadline) headlineIndex.current += 1;
+      if (usePost) headlineIndex.current += 1;
 
       setEntries((current) =>
         [
@@ -683,7 +718,7 @@ function TrafficPanel({ payload }: { payload: WallboardPayload }) {
 
 // Live/offline detection happens server-side (lib/youtubeLive.ts) via a
 // canonical-link scrape, no YouTube Data API key needed. Missing
-// YOUTUBE_LIVE_CHANNEL_ID stays quiet (panel doesn't render) rather than
+// YOUTUBE_LIVE_CHANNEL_HANDLE stays quiet (panel doesn't render) rather than
 // showing a setup warning, matching the DATABASE_MONITORS_STATUS_URL
 // convention. Video is muted by default (`mute=1`) since this is ambient
 // visual-only signage — matches the room's existing "no sound unless armed"

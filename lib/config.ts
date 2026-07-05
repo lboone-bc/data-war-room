@@ -16,9 +16,11 @@ export type ServerConfig = {
   trafficDropThreshold: number;
   audioEnabled: boolean;
   audioCooldownSeconds: number;
-  foxNewsRssUrl: string;
   youtubeLiveChannelHandle: string | null;
   youtubeFallbackChannelHandle: string | null;
+  apifyToken: string | null;
+  instagramProfileUrl: string;
+  facebookPageUrl: string;
 };
 
 function numberFromEnv(name: string, fallback: number) {
@@ -56,11 +58,13 @@ export function getServerConfig(): ServerConfig {
     trafficDropThreshold: numberFromEnv("TRAFFIC_DROP_THRESHOLD", 80),
     audioEnabled: boolFromEnv("ALERT_AUDIO_ENABLED", true),
     audioCooldownSeconds: numberFromEnv("ALERT_AUDIO_COOLDOWN_SECONDS", 180),
-    foxNewsRssUrl: process.env.FOX_NEWS_RSS_URL || "https://moxie.foxnews.com/google-publisher/latest.xml",
     youtubeLiveChannelHandle: process.env.YOUTUBE_LIVE_CHANNEL_HANDLE || null,
     // Defaults to LiveNOW from Fox (24/7 news livestream) so the panel has a
     // sensible fallback out of the box when the primary channel isn't live;
     // set to an empty string to disable the fallback entirely.
-    youtubeFallbackChannelHandle: process.env.YOUTUBE_FALLBACK_CHANNEL_HANDLE || "@livenowfox"
+    youtubeFallbackChannelHandle: process.env.YOUTUBE_FALLBACK_CHANNEL_HANDLE || "@livenowfox",
+    apifyToken: process.env.APIFY_TOKEN || null,
+    instagramProfileUrl: process.env.APIFY_INSTAGRAM_PROFILE_URL || "https://www.instagram.com/biltmorechurch/",
+    facebookPageUrl: process.env.APIFY_FACEBOOK_PAGE_URL || "https://www.facebook.com/mybiltmorechurch/"
   };
 }

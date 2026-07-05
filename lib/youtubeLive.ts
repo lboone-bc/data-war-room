@@ -21,7 +21,7 @@ const LIVE_URL = (handle: string) => `https://www.youtube.com/${handle}/live`;
 const CANONICAL_WATCH_PATTERN =
   /<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})">/;
 
-// Same discipline as lib/analytics.ts / lib/newsFeed.ts: a generous TTL
+// Same discipline as lib/analytics.ts / lib/apify.ts: a generous TTL
 // cache, in-flight de-duplication so concurrent requests share one fetch,
 // and a silent fallback to the last-good result on failure — never throw,
 // never surface a raw scrape/network error to the UI. 45s is short enough

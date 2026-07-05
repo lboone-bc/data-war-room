@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAnalyticsSnapshot } from "@/lib/analytics";
+import { getLatestFacebookPost, getLatestInstagramPost } from "@/lib/apify";
 import { getServerConfig } from "@/lib/config";
-import { getFoxHeadlines, getNewsHeadlines } from "@/lib/newsFeed";
 import {
   buildTrafficAlerts,
   checkDatabaseMonitors,
   checkSsl,
   checkWebsite
 } from "@/lib/systemStatus";
-import type { WallboardPayload } from "@/lib/types";
+import type { SocialPost, WallboardPayload } from "@/lib/types";
 import { getYoutubeLiveStatus } from "@/lib/youtubeLive";
 
 export const dynamic = "force-dynamic";
@@ -31,16 +31,20 @@ export async function GET(request: NextRequest) {
   }
 
   const generatedAt = new Date().toISOString();
-  const [analyticsResult, website, ssl, databaseMonitors, hnHeadlines, foxHeadlines, youtubeLive] =
+  const [analyticsResult, website, ssl, databaseMonitors, instagramPost, facebookPost, youtubeLive] =
     await Promise.all([
       getAnalyticsSnapshot(config),
       checkWebsite(config),
       checkSsl(config),
       checkDatabaseMonitors(config),
-      getNewsHeadlines(),
-      getFoxHeadlines(config.foxNewsRssUrl),
-      // Missing config stays quiet (no network call, no setup alert) — same
-      // convention as DATABASE_MONITORS_STATUS_URL below.
+      // Missing APIFY_TOKEN stays quiet (no network call, no setup alert) —
+      // same convention as DATABASE_MONITORS_STATUS_URL below.
+      config.apifyToken
+        ? getLatestInstagramPost(config.apifyToken, config.instagramProfileUrl)
+        : Promise.resolve(null),
+      config.apifyToken
+        ? getLatestFacebookPost(config.apifyToken, config.facebookPageUrl)
+        : Promise.resolve(null),
       config.youtubeLiveChannelHandle
         ? getYoutubeLiveStatus(config.youtubeLiveChannelHandle)
         : Promise.resolve({ live: false, videoId: null })
@@ -53,13 +57,10 @@ export async function GET(request: NextRequest) {
     !youtubeLive.live && config.youtubeFallbackChannelHandle
       ? await getYoutubeLiveStatus(config.youtubeFallbackChannelHandle)
       : { live: false, videoId: null };
-  // Interleave so the ambient ticker rotation (app/wallboard/page.tsx) isn't
-  // dominated by whichever source happens to respond with more items.
-  const newsHeadlines = hnHeadlines
-    .flatMap((headline, index) => [headline, foxHeadlines[index]])
-    .concat(foxHeadlines.slice(hnHeadlines.length))
-    .filter((headline): headline is (typeof hnHeadlines)[number] => Boolean(headline))
-    .slice(0, 12);
+
+  const socialPosts: SocialPost[] = [instagramPost, facebookPost].filter(
+    (post): post is SocialPost => Boolean(post)
+  );
 
   const payload: WallboardPayload = {
     generatedAt,
@@ -87,7 +88,7 @@ export async function GET(request: NextRequest) {
       databaseMonitors
     },
     alerts: [],
-    newsHeadlines,
+    socialPosts,
     liveStream: {
       enabled: Boolean(config.youtubeLiveChannelHandle),
       live: youtubeLive.live,

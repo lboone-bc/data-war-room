@@ -29,10 +29,12 @@ export type Alert = {
   audible: boolean;
 };
 
-export type NewsHeadline = {
+export type SocialPost = {
   id: string;
+  platform: "instagram" | "facebook";
   text: string;
-  source?: "hn" | "fox";
+  url: string;
+  postedAt: string | null;
 };
 
 export type FeedState = "live" | "setup" | "degraded";
@@ -102,6 +104,6 @@ export type WallboardPayload = {
     };
   };
   alerts: Alert[];
-  newsHeadlines: NewsHeadline[];
+  socialPosts: SocialPost[];
   liveStream: LiveStreamState;
 };

@@ -16,10 +16,11 @@
   - Realtime also supports `city`; the wallboard uses city-level dots only for cities present in the coordinate table and otherwise falls back to a country-level anchor.
   - Top Pages and Sources both use today's standard GA report (not Realtime) — page/source popularity doesn't need to-the-second freshness, and it keeps load off the much smaller Realtime quota.
   - Implementation: `lib/analytics.ts`. Responses are cached for 3 minutes with in-flight-promise de-duplication (concurrent requests share one fetch instead of each hitting GA). Quota exhaustion blanks analytics panels, shows a concise degraded banner/footer message, and does not create a visual/audible alert pop-up. The backoff after a quota error targets the next clock-hour boundary rather than a fixed duration, since GA's Realtime property-token quota resets on the hour, not on a rolling window from the failed request — confirmed directly from the GA account's Data API quota history log (Admin → Account data API quota history) during a 2026-07-02 incident where an early polling configuration burned ~14,000 Realtime tokens in a single hour.
-- Hacker News public Firebase API
-  - Config: none — no API key required.
-  - Used only for the ambient "system log" ticker (`app/wallboard/page.tsx`'s `SystemLog`/`useSystemLog`), which spans the full width of the wallboard below the panel grid and rotates in real HN headlines alongside internal heartbeat lines every 2-5 minutes. Purely decorative — never generates an alert, never blocks rendering, and silently falls back to heartbeat-only lines on failure.
-  - Implementation: `lib/newsFeed.ts`, cached 15 minutes with the same in-flight-dedup/silent-fallback pattern as the GA client.
+- Apify (Instagram + Facebook latest post)
+  - Config: `APIFY_TOKEN`, `APIFY_INSTAGRAM_PROFILE_URL`, `APIFY_FACEBOOK_PAGE_URL`
+  - Used only for the ambient "system log" ticker (`app/wallboard/page.tsx`'s `SystemLog`/`useSystemLog`), which spans the full width of the wallboard below the panel grid and rotates the church's latest Instagram/Facebook post alongside internal heartbeat lines every 2-5 minutes; a brand-new post also surfaces immediately as a distinct "New post" line. Purely decorative/ambient in the sense that it never generates an audible alert or blocks rendering, and silently falls back to heartbeat-only lines on failure.
+  - Neither platform has a free public feed (confirmed by direct testing: Facebook returns a flat error page and Instagram an empty JS shell to anonymous requests), so this runs through Apify's `apify~instagram-post-scraper` and `apify~facebook-posts-scraper` actors via the `run-sync-get-dataset-items` API — Apify does the actual scraping on its own infrastructure/ToS relationship with those platforms, this app never scrapes them directly.
+  - Implementation: `lib/apify.ts`, cached 15 minutes per platform with the same in-flight-dedup/silent-fallback pattern as the GA client — each call is real billed Apify compute, so this cache protects cost, not just freshness.
 - Existing active database dashboard
   - Config: `DATABASE_DASHBOARD_URL`
   - Rendered as a scaled iframe and refreshed on `DATABASE_REFRESH_SECONDS`.
@@ -33,8 +34,8 @@
   - Config: `WEBSITE_HEALTHCHECK_ENABLED`, `WEBSITE_HEALTHCHECK_URL`, `WEBSITE_HOSTNAME`
   - Website health checks are passive by default; enable explicitly before sending synthetic `HEAD` requests to the public website.
 - YouTube live status (Live Stream panel)
-  - Config: `YOUTUBE_LIVE_CHANNEL_ID`, `YOUTUBE_LIVE_CHANNEL_HANDLE`
-  - No API key required — `lib/youtubeLive.ts` scrapes the channel's `/live` page canonical link to detect an active broadcast, cached 45 seconds with the same silent-fallback discipline as every other external call. When live, shows a muted autoplaying embed with a "LIVE" badge; when not, a quiet "Not currently live" state. Missing config means the panel doesn't render at all rather than showing a setup warning.
+  - Config: `YOUTUBE_LIVE_CHANNEL_HANDLE`, `YOUTUBE_FALLBACK_CHANNEL_HANDLE` (defaults to `@livenowfox`)
+  - No API key required — `lib/youtubeLive.ts` scrapes the channel's `/<handle>/live` page canonical link to detect an active broadcast, cached 45 seconds with the same silent-fallback discipline as every other external call. When the primary channel is live, shows a muted autoplaying embed with a "LIVE" badge; when it isn't, falls back to the fallback channel (clearly badged as such) if that one is live; otherwise a quiet "Not currently live" state. Missing `YOUTUBE_LIVE_CHANNEL_HANDLE` means the panel doesn't render at all rather than showing a setup warning.
 
 ## Security And Access
 
