@@ -13,6 +13,14 @@ Open `http://localhost:3000/wallboard`. Without environment variables, panels sh
 
 **Requires a supported Node LTS (18.18+, 20.9+, or 22.x).** On Node v24+, `npm run dev` can hang indefinitely after printing `✓ Starting...` — the server accepts connections but every request times out with zero CPU usage (confirmed not a slow first compile). If `localhost:3000` won't respond, check `node -v` before troubleshooting anything else in the app itself.
 
+If `http://localhost:3000` stops responding (hung/crashed dev server), run:
+
+```bash
+npm run dev:restart
+```
+
+This kills whatever's on port 3000 (including a hung `next dev`), switches to the Node version pinned in `.nvmrc` via `nvm` if available, and starts `npm run dev` fresh. It's a thin wrapper around `scripts/restart-dev.sh`; Ctrl+C stops it like a normal `npm run dev`.
+
 ## Configuration
 
 Create `.env.local` for local development. For production, set the same values in the cloud host.
