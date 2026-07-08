@@ -36,6 +36,14 @@
 - YouTube live status (Live Stream panel)
   - Config: `YOUTUBE_LIVE_CHANNEL_HANDLE`, `YOUTUBE_FALLBACK_CHANNEL_HANDLE` (defaults to `@livenowfox`)
   - No API key required — `lib/youtubeLive.ts` scrapes the channel's `/<handle>/live` page canonical link to detect an active broadcast, cached 45 seconds with the same silent-fallback discipline as every other external call. When the primary channel is live, shows a muted autoplaying embed with a "LIVE" badge; when it isn't, falls back to the fallback channel (clearly badged as such) if that one is live; otherwise a quiet "Not currently live" state. Missing `YOUTUBE_LIVE_CHANNEL_HANDLE` means the panel doesn't render at all rather than showing a setup warning.
+- National Weather Service API (Arden Weather panel)
+  - Config: none.
+  - Uses the no-key NWS point endpoint for Arden, NC (`35.4665,-82.5165`) to discover the forecast and nearest observation station, then shows current conditions plus three daytime forecast cards in the right-side local-ops column.
+  - Implementation: `lib/weather.ts`, cached 10 minutes with in-flight-promise de-duplication and silent last-good/empty fallback. A partial or failed NWS response degrades the panel instead of raising a wallboard alert.
+- DriveNC traffic cameras
+  - Config: none; camera list is in `lib/trafficCameras.ts`.
+  - Camera IDs/URLs: `4210`, `5269`, `4208`, `4839` at `https://www.drivenc.gov/map/Cctv/<id>`.
+  - These DriveNC URLs return raw JPEG images with `Cache-Control: max-age=60`, not iframe map pages. The app proxies them through `/api/traffic-camera/[id]` for a 60-second cache, in-flight de-duplication, and last-good fallback; the client refreshes each tile every 60 seconds and shows a degraded overlay on image failure.
 
 ## Security And Access
 

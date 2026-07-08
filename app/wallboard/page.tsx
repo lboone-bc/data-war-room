@@ -4,8 +4,11 @@ import {
   Activity,
   AlertTriangle,
   Bell,
+  Camera,
   Clock3,
+  CloudSun,
   Database,
+  Droplets,
   Globe2,
   Maximize2,
   Minimize2,
@@ -15,6 +18,7 @@ import {
   ShieldCheck,
   Signal,
   Volume2,
+  Wind,
   Wifi,
   Youtube
 } from "lucide-react";
@@ -63,6 +67,10 @@ function timeLabel(value: string | null) {
 
 function numberLabel(value: number | null) {
   return value === null ? "" : value.toLocaleString();
+}
+
+function temperatureLabel(value: number | null) {
+  return value === null ? "--" : `${value}°`;
 }
 
 function agoSeconds(value: string) {
@@ -716,6 +724,99 @@ function TrafficPanel({ payload }: { payload: WallboardPayload }) {
   );
 }
 
+function WeatherPanel({ payload }: { payload: WallboardPayload }) {
+  const weather = payload.localWeather;
+  const current = weather.current;
+
+  return (
+    <Panel title="Arden Weather" icon={<CloudSun size={18} />} className={`weather-panel ${weather.status}`}>
+      <div className="weather-current">
+        <div>
+          <span>{weather.location}</span>
+          <strong>{temperatureLabel(current.temperatureF)}</strong>
+          <em>{current.condition || weather.message || "Weather pending"}</em>
+        </div>
+        <div className="weather-stats">
+          <span title="Nearest NWS observation station">
+            <RadioTower size={14} />
+            {current.station || "NWS"}
+          </span>
+          <span>
+            <Droplets size={14} />
+            {current.humidity === null ? "--" : `${current.humidity}%`}
+          </span>
+          <span>
+            <Wind size={14} />
+            {current.windMph === null ? "--" : `${current.windDirection ? `${current.windDirection} ` : ""}${current.windMph} mph`}
+          </span>
+        </div>
+      </div>
+      <div className="forecast-grid">
+        {weather.forecast.length ? weather.forecast.map((day) => (
+          <div key={day.startTime} className="forecast-card">
+            <span>{day.name}</span>
+            <strong>
+              {day.highF === null ? "--" : day.highF}
+              <small> / {day.lowF === null ? "--" : day.lowF}</small>
+            </strong>
+            <em>{day.summary}</em>
+          </div>
+        )) : <div className="blank-row">Forecast unavailable</div>}
+      </div>
+      <div className="weather-updated">
+        observed {current.observedAt ? timeLabel(current.observedAt) : "pending"}
+      </div>
+    </Panel>
+  );
+}
+
+function TrafficCameraPanel({ payload }: { payload: WallboardPayload }) {
+  const [refreshedAt, setRefreshedAt] = useState(() => new Date());
+  const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
+  const refreshMs = payload.trafficCameras.refreshSeconds * 1000;
+  const refreshKey = refreshedAt.getTime();
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setRefreshedAt(new Date());
+      setFailedIds(new Set());
+    }, refreshMs);
+    return () => window.clearInterval(interval);
+  }, [refreshMs]);
+
+  return (
+    <Panel title="Traffic Cameras" icon={<Camera size={18} />} className="camera-panel">
+      <div className="camera-grid">
+        {payload.trafficCameras.cameras.map((camera) => {
+          const failed = failedIds.has(camera.id);
+
+          return (
+            <div key={camera.id} className="camera-tile">
+              <img
+                src={`/api/traffic-camera/${camera.id}?refresh=${refreshKey}`}
+                alt={camera.label}
+                onError={() => {
+                  setFailedIds((current) => new Set(current).add(camera.id));
+                }}
+              />
+              <span>{camera.label}</span>
+              {failed ? (
+                <div className="camera-failed">
+                  <AlertTriangle size={16} />
+                  feed unavailable
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      <div className="camera-refresh">
+        refresh {payload.trafficCameras.refreshSeconds}s - updated {timeLabel(refreshedAt.toISOString())}
+      </div>
+    </Panel>
+  );
+}
+
 // Live/offline detection happens server-side (lib/youtubeLive.ts) via a
 // canonical-link scrape, no YouTube Data API key needed. Missing
 // YOUTUBE_LIVE_CHANNEL_HANDLE stays quiet (panel doesn't render) rather than
@@ -985,7 +1086,11 @@ export default function WallboardPage() {
 
         <GeoPanel payload={payload} />
 
-        <TrafficPanel payload={payload} />
+        <div className="ops-column">
+          <WeatherPanel payload={payload} />
+          <TrafficCameraPanel payload={payload} />
+          <TrafficPanel payload={payload} />
+        </div>
       </section>
 
       <div className="ticker-bar">

@@ -8,7 +8,9 @@ import {
   checkSsl,
   checkWebsite
 } from "@/lib/systemStatus";
+import { TRAFFIC_CAMERA_REFRESH_SECONDS, TRAFFIC_CAMERAS } from "@/lib/trafficCameras";
 import type { SocialPost, WallboardPayload } from "@/lib/types";
+import { getArdenWeather } from "@/lib/weather";
 import { getYoutubeLiveStatus } from "@/lib/youtubeLive";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +33,7 @@ export async function GET(request: NextRequest) {
   }
 
   const generatedAt = new Date().toISOString();
-  const [analyticsResult, website, ssl, databaseMonitors, instagramPost, facebookPost, youtubeLive] =
+  const [analyticsResult, website, ssl, databaseMonitors, instagramPost, facebookPost, youtubeLive, localWeather] =
     await Promise.all([
       getAnalyticsSnapshot(config),
       checkWebsite(config),
@@ -47,7 +49,8 @@ export async function GET(request: NextRequest) {
         : Promise.resolve(null),
       config.youtubeLiveChannelHandle
         ? getYoutubeLiveStatus(config.youtubeLiveChannelHandle)
-        : Promise.resolve({ live: false, videoId: null })
+        : Promise.resolve({ live: false, videoId: null }),
+      getArdenWeather()
     ]);
 
   // Only spend a second request on the fallback channel when the primary
@@ -101,6 +104,11 @@ export async function GET(request: NextRequest) {
               channelUrl: `https://www.youtube.com/${config.youtubeFallbackChannelHandle}`
             }
           : null
+    },
+    localWeather,
+    trafficCameras: {
+      refreshSeconds: TRAFFIC_CAMERA_REFRESH_SECONDS,
+      cameras: TRAFFIC_CAMERAS
     }
   };
 

@@ -52,6 +52,39 @@ export type LiveStreamState = {
   } | null;
 };
 
+export type LocalWeatherForecast = {
+  name: string;
+  startTime: string;
+  highF: number | null;
+  lowF: number | null;
+  summary: string;
+  nightSummary: string | null;
+  wind: string | null;
+};
+
+export type LocalWeatherState = {
+  status: FeedState;
+  message: string | null;
+  location: string;
+  updatedAt: string | null;
+  current: {
+    temperatureF: number | null;
+    condition: string | null;
+    humidity: number | null;
+    windMph: number | null;
+    windDirection: string | null;
+    observedAt: string | null;
+    station: string | null;
+  };
+  forecast: LocalWeatherForecast[];
+};
+
+export type TrafficCamera = {
+  id: string;
+  label: string;
+  url: string;
+};
+
 export type WallboardPayload = {
   generatedAt: string;
   mode: FeedState;
@@ -106,4 +139,9 @@ export type WallboardPayload = {
   alerts: Alert[];
   socialPosts: SocialPost[];
   liveStream: LiveStreamState;
+  localWeather: LocalWeatherState;
+  trafficCameras: {
+    refreshSeconds: number;
+    cameras: TrafficCamera[];
+  };
 };
