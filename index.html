@@ -1,0 +1,929 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Data War Room</title>
+  <style>
+    :root {
+      --bg: #03080d;
+      --panel: rgba(7, 19, 28, 0.88);
+      --line: rgba(111, 231, 255, 0.24);
+      --line-strong: rgba(111, 231, 255, 0.48);
+      --text: #e7fbff;
+      --muted: #82a7b4;
+      --cyan: #4febff;
+      --green: #6dffb3;
+      --amber: #ffd166;
+      --red: #ff4d6d;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .wallboard {
+      position: relative;
+      height: 100vh;
+      overflow: hidden;
+      padding: clamp(14px, 1.5vw, 24px);
+      background:
+        linear-gradient(rgba(79, 235, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(79, 235, 255, 0.035) 1px, transparent 1px),
+        radial-gradient(circle at 18% 12%, rgba(79, 235, 255, 0.18), transparent 24%),
+        radial-gradient(circle at 84% 18%, rgba(109, 255, 179, 0.12), transparent 28%),
+        linear-gradient(135deg, #03080d, #071620 52%, #020406);
+      background-size: 44px 44px, 44px 44px, auto, auto, auto;
+    }
+
+    .noise {
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      z-index: 5;
+      background: repeating-linear-gradient(0deg, rgba(255,255,255,0.025), rgba(255,255,255,0.025) 1px, transparent 1px, transparent 4px);
+      mix-blend-mode: screen;
+      opacity: 0.24;
+    }
+
+    .command-header,
+    .incident,
+    .panel { position: relative; z-index: 1; }
+
+    .command-header {
+      height: 70px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--cyan);
+      text-transform: uppercase;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.16em;
+    }
+
+    h1 {
+      margin: 4px 0 0;
+      font-size: clamp(25px, 2.4vw, 42px);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .header-cluster,
+    .clock,
+    .header-stats,
+    .countdown,
+    .icon-button,
+    .audio-button {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .clock,
+    .header-stats,
+    .countdown,
+    .icon-button,
+    .audio-button {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      background: rgba(5, 15, 22, 0.76);
+      color: var(--text);
+    }
+
+    .header-stats {
+      max-width: min(46vw, 760px);
+      padding: 0 12px;
+      gap: 12px;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .header-stats span { overflow: hidden; text-overflow: ellipsis; }
+
+    .countdown {
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      min-width: 142px;
+      padding: 0 12px;
+      gap: 1px;
+      color: var(--amber);
+      text-transform: uppercase;
+    }
+
+    .countdown span { font-size: 9px; font-weight: 900; letter-spacing: 0.12em; }
+    .countdown strong { color: var(--text); font-size: 16px; line-height: 1; font-variant-numeric: tabular-nums; }
+    .clock { padding: 0 13px; min-width: 148px; justify-content: center; font-variant-numeric: tabular-nums; }
+    .icon-button, .audio-button { cursor: pointer; }
+    .icon-button { width: 40px; justify-content: center; }
+    .audio-button { padding: 0 12px; text-transform: uppercase; color: var(--cyan); font-size: 11px; font-weight: 900; letter-spacing: 0.1em; }
+
+    .incident {
+      min-height: 52px;
+      margin: 14px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      border: 1px solid var(--line);
+      background: rgba(5, 16, 24, 0.88);
+      padding: 10px 14px;
+    }
+
+    .incident strong { text-transform: uppercase; letter-spacing: 0.08em; font-size: 13px; }
+    .incident p { margin: 0; color: var(--muted); font-size: 13px; text-align: right; }
+    .incident.critical { border-color: rgba(255, 77, 109, 0.72); box-shadow: 0 0 32px rgba(255, 77, 109, 0.18); }
+    .incident.critical strong { color: var(--red); }
+    .incident.watch strong { color: var(--amber); }
+
+    .wall-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 0.95fr 0.95fr 1.18fr;
+      grid-template-rows: minmax(220px, 0.9fr) 1.55fr 0.75fr;
+      gap: 14px;
+      height: calc(100vh - 256px);
+      min-height: 0;
+    }
+
+    .panel {
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.035), transparent 26%), var(--panel);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.025), 0 18px 42px rgba(0,0,0,0.22);
+    }
+
+    .panel::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      border-top: 2px solid rgba(79, 235, 255, 0.5);
+      opacity: 0.65;
+    }
+
+    .panel-header {
+      height: 38px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--line);
+      color: var(--cyan);
+    }
+
+    .panel-header h2 {
+      margin: 0;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.11em;
+    }
+
+    .hero-panel { grid-column: 1 / 2; grid-row: 1; display: grid; grid-template-rows: 38px minmax(0, 1fr); }
+    .traffic-panel { grid-column: 2 / 3; grid-row: 1; display: grid; grid-template-rows: 38px minmax(0, 1fr) 22px; }
+    .geo-panel { grid-column: 1 / 3; grid-row: 2 / 4; display: grid; grid-template-rows: 38px minmax(0, 1fr) auto; }
+    .database-column { grid-column: 3 / 5; grid-row: 1 / 4; display: grid; grid-template-rows: 1.05fr 1fr; gap: 14px; min-height: 0; }
+    .database-panel, .livestream-panel { min-height: 0; display: grid; grid-template-rows: 38px minmax(0, 1fr); }
+    .ops-column { grid-column: 5 / 6; grid-row: 1 / 4; display: grid; grid-template-rows: minmax(220px, 0.72fr) minmax(0, 1.78fr); gap: 14px; min-height: 0; }
+    .weather-panel { display: grid; grid-template-rows: 38px auto minmax(0, 1fr); }
+    .camera-panel { display: grid; grid-template-rows: 38px minmax(0, 1fr) 20px; }
+
+    .pulse-metrics {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-content: center;
+      gap: 10px;
+      padding: 12px;
+    }
+
+    .pulse-metrics div {
+      min-width: 0;
+      aspect-ratio: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      border: 1px solid var(--line);
+      background: rgba(2, 8, 13, 0.52);
+      padding: 12px;
+      overflow: hidden;
+    }
+
+    .pulse-metrics strong {
+      margin-top: 10px;
+      color: var(--text);
+      font-size: clamp(18px, 2.2vw, 40px);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .pulse-metrics span,
+    .weather-current span,
+    .traffic-updated,
+    .camera-refresh {
+      color: var(--muted);
+      font-size: 10px;
+      text-transform: uppercase;
+      font-weight: 900;
+      letter-spacing: 0.1em;
+      line-height: 1.25;
+    }
+
+    .traffic-columns {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      padding: 9px 11px 4px;
+      overflow: hidden;
+    }
+
+    .traffic-columns h3 { margin: 0 0 6px; color: var(--cyan); font-size: 10px; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; }
+    .rank-list { display: grid; gap: 3px; }
+    .rank-list div, .geo-list div { min-height: 21px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; border-bottom: 1px solid rgba(111, 231, 255, 0.11); }
+    .rank-list span, .geo-list span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
+    .rank-list strong, .geo-list strong { color: var(--text); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .traffic-updated { display: flex; align-items: center; justify-content: flex-end; padding: 0 11px 8px; }
+
+    .world-map {
+      position: relative;
+      min-height: 0;
+      margin: 12px 12px 8px;
+      border: 1px solid rgba(111, 231, 255, 0.17);
+      background:
+        linear-gradient(rgba(111, 231, 255, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(111, 231, 255, 0.08) 1px, transparent 1px),
+        radial-gradient(ellipse at 28% 42%, rgba(109, 255, 179, 0.18), transparent 14%),
+        radial-gradient(ellipse at 53% 38%, rgba(79, 235, 255, 0.16), transparent 18%),
+        radial-gradient(ellipse at 75% 49%, rgba(109, 255, 179, 0.14), transparent 20%),
+        rgba(2, 8, 13, 0.64);
+      background-size: 28px 28px, 28px 28px, auto, auto, auto, auto;
+    }
+
+    .map-point {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      margin: -6px 0 0 -6px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 6px rgba(109, 255, 179, 0.12), 0 0 18px var(--green);
+      animation: pulse 2.3s ease-in-out infinite;
+    }
+
+    .map-point span {
+      position: absolute;
+      left: 14px;
+      top: -7px;
+      min-width: 18px;
+      border: 1px solid rgba(109, 255, 179, 0.42);
+      background: rgba(1, 10, 12, 0.84);
+      color: var(--green);
+      padding: 2px 4px;
+      font-size: 10px;
+      line-height: 1;
+      font-weight: 900;
+    }
+
+    .geo-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; padding: 0 12px 10px; }
+
+    .frame-shell, .frame-empty {
+      width: 100%;
+      height: calc(100% - 38px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background:
+        linear-gradient(rgba(111, 231, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(111, 231, 255, 0.05) 1px, transparent 1px),
+        #07111a;
+      background-size: 28px 28px;
+    }
+
+    .frame-stage { width: 100%; height: 100%; overflow: hidden; border: 1px solid rgba(111, 231, 255, 0.22); background: #07111a; }
+    .frame-stage iframe { width: 100%; height: 100%; border: 0; background: #07111a; }
+    .frame-stage iframe.darken { filter: invert(1) hue-rotate(180deg) saturate(0.86) brightness(0.78) contrast(0.96); }
+    .frame-empty { flex-direction: column; gap: 10px; color: var(--muted); text-align: center; }
+    .frame-empty strong { color: var(--text); }
+
+    .livestream-frame { position: relative; min-height: 0; }
+    .livestream-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
+    .livestream-badge { position: absolute; top: 10px; left: 10px; padding: 3px 8px; background: rgba(0, 6, 10, 0.72); border: 1px solid var(--red); color: var(--red); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.12em; }
+    .livestream-badge.fallback { border-color: var(--amber); color: var(--amber); }
+    .livestream-idle { height: 100%; display: grid; place-items: center; align-content: center; gap: 8px; color: var(--muted); }
+    .livestream-idle strong { color: var(--text); font-size: 14px; }
+
+    .weather-current {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      padding: 8px 12px 6px;
+      border-bottom: 1px solid rgba(111, 231, 255, 0.11);
+    }
+
+    .weather-current strong { display: block; margin-top: 2px; color: var(--cyan); font-size: clamp(34px, 3vw, 52px); line-height: 0.95; font-variant-numeric: tabular-nums; }
+    .weather-current em, .forecast-card em { display: -webkit-box; overflow: hidden; color: var(--text); font-style: normal; line-height: 1.25; -webkit-box-orient: vertical; }
+    .weather-current em { -webkit-line-clamp: 2; font-size: 12px; }
+    .weather-stats { display: grid; align-content: center; gap: 6px; min-width: 88px; }
+    .weather-stats span { display: flex; justify-content: flex-end; color: var(--green); letter-spacing: 0.04em; }
+    .forecast-grid { min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 6px 9px 8px; }
+    .forecast-card { min-width: 0; min-height: 0; border: 1px solid rgba(111, 231, 255, 0.15); background: rgba(2, 8, 13, 0.52); padding: 6px; overflow: hidden; }
+    .forecast-card span { display: block; overflow: hidden; color: var(--muted); font-size: 10px; font-weight: 900; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+    .forecast-card strong { display: block; margin: 2px 0; color: var(--text); font-size: 19px; line-height: 1; font-variant-numeric: tabular-nums; }
+    .forecast-card small { color: var(--muted); font-size: 12px; }
+    .forecast-card em { -webkit-line-clamp: 1; font-size: 10px; }
+
+    .camera-grid { min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 10px 10px 6px; }
+    .camera-tile { position: relative; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgba(111, 231, 255, 0.18); background: rgba(2, 8, 13, 0.64); }
+    .camera-tile img { width: 100%; height: 100%; display: block; object-fit: cover; }
+    .camera-failed { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 6px; background: rgba(2, 8, 13, 0.82); color: var(--amber); font-size: 10px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; }
+    .camera-refresh { display: flex; align-items: center; justify-content: flex-end; padding: 0 10px 8px; }
+
+    .ticker-bar { margin-top: 14px; height: 44px; position: relative; z-index: 1; }
+    .system-log { width: 100%; height: 100%; padding: 0 14px; overflow: hidden; display: flex; align-items: center; border: 1px solid rgba(111, 231, 255, 0.16); background: rgba(2, 8, 13, 0.58); font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+    .ticker-track { display: inline-flex; align-items: baseline; white-space: nowrap; animation-name: ticker-scroll; animation-timing-function: linear; animation-iteration-count: infinite; }
+    .ticker-entry { display: inline-flex; align-items: baseline; gap: 10px; font-size: 15px; line-height: 1.3; opacity: 0.85; }
+    .ticker-entry::after { content: "◆"; margin: 0 28px; color: rgba(111, 231, 255, 0.3); font-size: 11px; }
+    .ticker-time { flex: 0 0 auto; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; opacity: 0.7; }
+    .ticker-entry.info .ticker-text { color: var(--muted); }
+    .ticker-entry.nominal .ticker-text { color: var(--green); }
+    .ticker-entry.watch .ticker-text { color: var(--amber); }
+    .ticker-entry.critical .ticker-text { color: var(--red); }
+
+    .alert-overlay, .social-post-popup {
+      position: fixed;
+      right: clamp(18px, 2vw, 34px);
+      z-index: 9;
+      width: min(620px, calc(100vw - 36px));
+      border: 1px solid rgba(255, 209, 102, 0.88);
+      background: rgba(5, 10, 14, 0.96);
+      box-shadow: 0 0 42px rgba(255, 209, 102, 0.28), 0 26px 68px rgba(0, 0, 0, 0.42);
+      padding: 18px 20px;
+    }
+    .alert-overlay { top: 186px; }
+    .alert-overlay.critical { border-color: rgba(255, 77, 109, 0.82); box-shadow: 0 0 38px rgba(255, 77, 109, 0.28); }
+    .social-post-popup { top: 252px; }
+    .alert-overlay strong, .social-post-popup strong { color: var(--amber); text-transform: uppercase; letter-spacing: 0.12em; }
+    .alert-overlay.critical strong { color: var(--red); }
+    .alert-overlay p, .social-post-popup p { margin: 12px 0 10px; color: var(--text); font-size: 18px; font-weight: 800; line-height: 1.25; }
+    .social-post-popup p { font-size: 22px; }
+
+    .blank-row, .blank-state { color: var(--muted); font-size: 12px; text-transform: uppercase; font-weight: 900; letter-spacing: 0.08em; }
+    .blank-state { min-height: 0; display: grid; place-items: center; padding: 12px; text-align: center; }
+    .hidden { display: none !important; }
+
+    @keyframes ticker-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+    @keyframes pulse { 0%, 100% { transform: scale(0.82); opacity: 0.75; } 50% { transform: scale(1.25); opacity: 1; } }
+
+    @media (max-width: 1200px) {
+      body { overflow: auto; }
+      .wallboard { min-height: 100vh; height: auto; overflow: visible; }
+      .wall-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); height: auto; }
+      .panel { min-height: 250px; }
+      .database-column, .geo-panel, .hero-panel, .ops-column, .traffic-panel { grid-column: span 2; grid-row: auto; }
+      .ops-column { grid-template-rows: auto; }
+      .traffic-columns { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wallboard">
+    <div class="noise"></div>
+    <header class="command-header">
+      <div>
+        <p class="eyebrow">Realtime operations wall</p>
+        <h1>War Room</h1>
+      </div>
+      <div class="header-cluster">
+        <div class="header-stats" id="headerStats"><span>setup telemetry</span><span>api age pending</span><span>generated pending</span></div>
+        <div class="countdown" title="Rock Update countdown"><span>Rock Update!</span><strong id="countdown">--d --h --m</strong></div>
+        <div class="clock" id="clock">--:--:--</div>
+        <button class="icon-button" id="refreshButton" type="button" title="Refresh telemetry">↻</button>
+        <button class="audio-button" id="audioButton" type="button" title="Arm and test alert audio">arm audio</button>
+      </div>
+    </header>
+
+    <section class="incident nominal" id="incident">
+      <strong>Acquiring telemetry</strong>
+      <p>Static wallboard is waiting for the secure API endpoint.</p>
+    </section>
+
+    <aside class="alert-overlay hidden" id="alertOverlay" role="status" aria-live="polite"></aside>
+    <aside class="social-post-popup hidden" id="socialPopup" role="status" aria-live="polite"></aside>
+
+    <section class="wall-grid">
+      <section class="panel hero-panel">
+        <header class="panel-header"><span>⌁</span><h2>Website Pulse</h2></header>
+        <div class="pulse-metrics">
+          <div><span>Active last 30m</span><strong id="activeUsers"></strong></div>
+          <div><span>GA events last 30m</span><strong id="eventCount"></strong></div>
+        </div>
+      </section>
+
+      <section class="panel traffic-panel">
+        <header class="panel-header"><span>≋</span><h2>Traffic Detail</h2></header>
+        <div class="traffic-columns">
+          <section><h3>Top Pages</h3><div class="rank-list" id="topPages"></div></section>
+          <section><h3>Sources</h3><div class="rank-list" id="topSources"></div></section>
+        </div>
+        <div class="traffic-updated" id="trafficUpdated">today report - GA cache pending - fetched pending</div>
+      </section>
+
+      <section class="panel geo-panel">
+        <header class="panel-header"><span>◎</span><h2>World Access Map</h2></header>
+        <div class="world-map" id="worldMap"></div>
+        <div class="geo-list" id="geoList"></div>
+      </section>
+
+      <div class="database-column">
+        <section class="panel database-panel">
+          <header class="panel-header"><span>▣</span><h2>Active Database System</h2></header>
+          <div class="frame-shell" id="databaseFrame"></div>
+        </section>
+        <section class="panel livestream-panel">
+          <header class="panel-header"><span>▻</span><h2>Live Stream</h2></header>
+          <div class="livestream-frame" id="liveStream"></div>
+        </section>
+      </div>
+
+      <div class="ops-column">
+        <section class="panel weather-panel">
+          <header class="panel-header"><span>☼</span><h2>Arden Weather</h2></header>
+          <div class="weather-current" id="weatherCurrent"></div>
+          <div class="forecast-grid" id="forecastGrid"></div>
+        </section>
+        <section class="panel camera-panel">
+          <header class="panel-header"><span>▧</span><h2>Traffic Cameras</h2></header>
+          <div class="camera-grid" id="cameraGrid"></div>
+          <div class="camera-refresh" id="cameraRefresh">refresh pending</div>
+        </section>
+      </div>
+    </section>
+
+    <div class="ticker-bar">
+      <div class="system-log"><div class="ticker-track" id="tickerTrack"></div></div>
+    </div>
+  </main>
+
+  <script>
+    "use strict";
+
+    const POLL_MS = 30000;
+    const ROCK_UPDATE_TARGET = new Date("2026-07-27T00:00:00-04:00").getTime();
+    const RECENT_SOCIAL_POST_MS = 5 * 60 * 1000;
+    const SOCIAL_NOTICE_MS = 45000;
+    const TICKER_PX_PER_SECOND = 60;
+    const HEARTBEAT_LINES = [
+      "telemetry nominal",
+      "dashboard refreshed",
+      "signal check complete",
+      "listening on all channels",
+      "no anomalies detected",
+      "baseline steady"
+    ];
+
+    const state = {
+      payload: null,
+      error: null,
+      lastUpdated: null,
+      logEntries: [],
+      seenAlertIds: new Set(),
+      seenSocialPostIds: new Set(),
+      headlineIndex: 0,
+      audioContext: null,
+      audioUnlocked: false,
+      lastToneAt: 0,
+      cameraRefreshAt: Date.now()
+    };
+
+    const params = new URLSearchParams(window.location.search);
+    const configuredApi = params.get("api") || window.localStorage.getItem("wallboard_api_url") || "wallboard.json";
+    const configuredToken = params.get("token") || window.localStorage.getItem("wallboard_token") || "";
+    if (params.get("api")) window.localStorage.setItem("wallboard_api_url", configuredApi);
+    if (params.get("token")) window.localStorage.setItem("wallboard_token", configuredToken);
+
+    const $ = (id) => document.getElementById(id);
+    const text = (id, value) => { const el = $(id); if (el) el.textContent = value ?? ""; };
+    const timeLabel = (value) => value ? new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(value)) : "pending";
+    const numberLabel = (value) => value === null || value === undefined ? "" : Number(value).toLocaleString();
+    const temperatureLabel = (value) => value === null || value === undefined ? "--" : `${value}°`;
+    const agoSeconds = (value) => value ? Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000)) : null;
+    const minutesLabel = (seconds) => seconds % 60 === 0 ? `${seconds / 60}m` : `${seconds}s`;
+
+    function countdownLabel(target, now) {
+      const remaining = Math.max(0, target - now.getTime());
+      const totalMinutes = Math.floor(remaining / 60000);
+      const days = Math.floor(totalMinutes / 1440);
+      const hours = Math.floor((totalMinutes % 1440) / 60);
+      const minutes = totalMinutes % 60;
+      return `${days}d ${hours}h ${minutes}m`;
+    }
+
+    function create(tag, className, value) {
+      const el = document.createElement(tag);
+      if (className) el.className = className;
+      if (value !== undefined && value !== null) el.textContent = value;
+      return el;
+    }
+
+    function defaultPayload() {
+      return {
+        generatedAt: new Date().toISOString(),
+        mode: "setup",
+        config: {
+          databaseDashboardUrl: null,
+          databaseRefreshSeconds: 60,
+          databaseFrameDarkMode: true,
+          audioEnabled: true,
+          audioCooldownSeconds: 180
+        },
+        analytics: {
+          status: "setup",
+          message: "Secure wallboard API is not connected.",
+          fetchedAt: null,
+          cacheSeconds: 180,
+          activeUsers: null,
+          eventCount: null,
+          topPages: [],
+          topSources: [],
+          geo: []
+        },
+        systems: {
+          databaseMonitors: { status: "nominal", downCount: null, detail: null }
+        },
+        alerts: [],
+        socialPosts: [],
+        liveStream: { enabled: false, live: false, videoId: null, channelUrl: "", fallback: null },
+        localWeather: {
+          status: "setup",
+          message: "Weather unavailable",
+          location: "Arden, NC",
+          updatedAt: null,
+          current: { temperatureF: null, condition: null, humidity: null, windMph: null, windDirection: null, observedAt: null, station: null },
+          forecast: []
+        },
+        trafficCameras: { refreshSeconds: 60, cameras: [] }
+      };
+    }
+
+    async function load() {
+      try {
+        const url = new URL(configuredApi, window.location.href);
+        if (configuredToken) url.searchParams.set("token", configuredToken);
+        const headers = configuredToken && url.origin === window.location.origin ? { "x-wallboard-token": configuredToken } : {};
+        const response = await fetch(url, { cache: "no-store", headers });
+        if (!response.ok) throw new Error(`Wallboard API returned ${response.status}`);
+        state.payload = await response.json();
+        state.error = null;
+        state.lastUpdated = new Date().toISOString();
+      } catch (error) {
+        state.error = error instanceof Error ? error.message : "Unknown API error";
+        state.payload = state.payload || defaultPayload();
+      }
+      render();
+    }
+
+    function renderHeader(payload) {
+      text("clock", new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }));
+      text("countdown", countdownLabel(ROCK_UPDATE_TARGET, new Date()));
+      const headerStats = $("headerStats");
+      headerStats.replaceChildren();
+      [
+        payload.mode === "live" ? "live telemetry" : `${payload.mode} telemetry`,
+        payload.analytics.message,
+        `api age ${state.lastUpdated ? `${agoSeconds(state.lastUpdated)}s` : "pending"}`,
+        `generated ${timeLabel(payload.generatedAt)}`
+      ].filter(Boolean).forEach((item) => headerStats.appendChild(create("span", "", item)));
+    }
+
+    function renderIncident(payload) {
+      const incident = $("incident");
+      const critical = payload.alerts.find((alert) => alert.severity === "critical");
+      const watch = payload.alerts.find((alert) => alert.severity === "watch");
+      const alert = critical || watch;
+      const degraded = payload.mode !== "live";
+      incident.className = `incident ${critical ? "critical" : watch || state.error || degraded ? "watch" : "nominal"}`;
+      incident.querySelector("strong").textContent = alert?.title || (state.error ? "Telemetry fetch issue" : degraded ? "Analytics telemetry degraded" : "All monitored signals nominal");
+      incident.querySelector("p").textContent = alert?.detail || state.error || (degraded ? payload.analytics.message || "Realtime analytics are currently blank." : "No active alerts from website, SSL, traffic, or monitor status checks.");
+    }
+
+    function renderPulse(payload) {
+      text("activeUsers", numberLabel(payload.analytics.activeUsers));
+      text("eventCount", numberLabel(payload.analytics.eventCount));
+    }
+
+    function renderRankList(id, items, emptyText) {
+      const list = $(id);
+      list.replaceChildren();
+      if (!items || !items.length) {
+        list.appendChild(create("div", "blank-row", emptyText));
+        return;
+      }
+      items.slice(0, 6).forEach((item) => {
+        const row = create("div");
+        row.appendChild(create("span", "", item.label));
+        row.appendChild(create("strong", "", item.value));
+        list.appendChild(row);
+      });
+    }
+
+    function renderTraffic(payload) {
+      renderRankList("topPages", payload.analytics.topPages, "No page data");
+      renderRankList("topSources", payload.analytics.topSources, "No source data");
+      text("trafficUpdated", `today report - GA cache ${minutesLabel(payload.analytics.cacheSeconds || 180)} - fetched ${timeLabel(payload.analytics.fetchedAt)}`);
+    }
+
+    function renderGeo(payload) {
+      const map = $("worldMap");
+      map.replaceChildren();
+      const points = payload.analytics.geo || [];
+      if (!points.length) {
+        map.appendChild(create("div", "blank-state", "No mapped realtime countries"));
+      } else {
+        points.forEach((point) => {
+          const dot = create("span", "map-point");
+          dot.style.left = `${((point.longitude + 180) / 360) * 100}%`;
+          dot.style.top = `${((90 - point.latitude) / 180) * 100}%`;
+          dot.title = `${point.region}: ${point.value} active users`;
+          dot.appendChild(create("span", "", point.value));
+          map.appendChild(dot);
+        });
+      }
+
+      const list = $("geoList");
+      list.replaceChildren();
+      points.slice(0, 4).forEach((point) => {
+        const row = create("div");
+        row.appendChild(create("span", "", point.region));
+        row.appendChild(create("strong", "", point.value));
+        list.appendChild(row);
+      });
+    }
+
+    function renderDatabase(payload) {
+      const shell = $("databaseFrame");
+      shell.replaceChildren();
+      if (!payload.config.databaseDashboardUrl) {
+        const empty = create("div", "frame-empty");
+        empty.appendChild(create("strong", "", "Dashboard URL not configured"));
+        empty.appendChild(create("span", "", "Configure it in the secure API service, not in this static HTML."));
+        shell.appendChild(empty);
+        return;
+      }
+      const stage = create("div", "frame-stage");
+      const iframe = create("iframe");
+      iframe.src = payload.config.databaseDashboardUrl;
+      iframe.title = "Active database dashboard";
+      iframe.referrerPolicy = "no-referrer";
+      if (payload.config.databaseFrameDarkMode) iframe.className = "darken";
+      stage.appendChild(iframe);
+      shell.appendChild(stage);
+    }
+
+    function renderLiveStream(payload) {
+      const root = $("liveStream");
+      root.replaceChildren();
+      const live = payload.liveStream;
+      const fallback = live?.fallback;
+      const videoId = live?.live ? live.videoId : fallback?.videoId;
+      if (videoId) {
+        const iframe = create("iframe");
+        iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&playsinline=1&modestbranding=1&rel=0`;
+        iframe.title = live.live ? "Live stream" : "Fallback live stream";
+        iframe.allow = "autoplay; encrypted-media; picture-in-picture";
+        root.appendChild(iframe);
+        root.appendChild(create("span", `livestream-badge${fallback && !live.live ? " fallback" : ""}`, fallback && !live.live ? "live now - fox news" : "live"));
+        return;
+      }
+      const idle = create("div", "livestream-idle");
+      idle.appendChild(create("strong", "", live?.enabled ? "Not currently live" : "Live stream not configured"));
+      idle.appendChild(create("span", "", live?.channelUrl ? live.channelUrl.replace("https://www.", "") : "Configure in secure API service"));
+      root.appendChild(idle);
+    }
+
+    function renderWeather(payload) {
+      const weather = payload.localWeather;
+      const current = weather.current || {};
+      const root = $("weatherCurrent");
+      root.replaceChildren();
+      const main = create("div");
+      main.appendChild(create("span", "", weather.location || "Arden, NC"));
+      main.appendChild(create("strong", "", temperatureLabel(current.temperatureF)));
+      main.appendChild(create("em", "", current.condition || weather.message || "Weather pending"));
+      const stats = create("div", "weather-stats");
+      stats.appendChild(create("span", "", current.station || "NWS"));
+      stats.appendChild(create("span", "", current.humidity === null || current.humidity === undefined ? "--" : `${current.humidity}%`));
+      stats.appendChild(create("span", "", current.windMph === null || current.windMph === undefined ? "--" : `${current.windDirection ? `${current.windDirection} ` : ""}${current.windMph} mph`));
+      root.appendChild(main);
+      root.appendChild(stats);
+
+      const grid = $("forecastGrid");
+      grid.replaceChildren();
+      if (!weather.forecast || !weather.forecast.length) {
+        grid.appendChild(create("div", "blank-row", "Forecast unavailable"));
+        return;
+      }
+      weather.forecast.slice(0, 3).forEach((day) => {
+        const card = create("div", "forecast-card");
+        card.appendChild(create("span", "", day.name));
+        const high = create("strong", "", day.highF === null || day.highF === undefined ? "--" : day.highF);
+        high.appendChild(create("small", "", ` / ${day.lowF === null || day.lowF === undefined ? "--" : day.lowF}`));
+        card.appendChild(high);
+        card.appendChild(create("em", "", day.summary || ""));
+        grid.appendChild(card);
+      });
+    }
+
+    function cameraSrc(camera) {
+      const base = camera.url || `/api/traffic-camera/${encodeURIComponent(camera.id)}`;
+      const join = base.includes("?") ? "&" : "?";
+      return `${base}${join}refresh=${state.cameraRefreshAt}`;
+    }
+
+    function renderCameras(payload) {
+      const grid = $("cameraGrid");
+      grid.replaceChildren();
+      const cameras = payload.trafficCameras?.cameras || [];
+      if (!cameras.length) {
+        grid.appendChild(create("div", "blank-state", "No camera feeds"));
+      }
+      cameras.forEach((camera) => {
+        const tile = create("div", "camera-tile");
+        const img = create("img");
+        img.src = cameraSrc(camera);
+        img.alt = camera.label || camera.id;
+        img.onerror = () => {
+          if (!tile.querySelector(".camera-failed")) tile.appendChild(create("div", "camera-failed", "feed unavailable"));
+        };
+        tile.appendChild(img);
+        grid.appendChild(tile);
+      });
+      text("cameraRefresh", `refresh ${payload.trafficCameras?.refreshSeconds || 60}s - updated ${timeLabel(new Date(state.cameraRefreshAt).toISOString())}`);
+    }
+
+    function socialPostExcerpt(post) {
+      const label = post.platform === "instagram" ? "Instagram" : "Facebook";
+      const text = (post.text || "").length > 140 ? `${post.text.slice(0, 140).trimEnd()}...` : post.text || "";
+      return `${label}: ${text}`;
+    }
+
+    function isRecentPost(post) {
+      if (!post.postedAt) return false;
+      const posted = new Date(post.postedAt).getTime();
+      if (Number.isNaN(posted)) return false;
+      const age = Date.now() - posted;
+      return age >= 0 && age <= RECENT_SOCIAL_POST_MS;
+    }
+
+    function addLog(textValue, severity, at) {
+      state.logEntries = [{ id: `${severity}-${Date.now()}-${Math.random()}`, text: textValue, severity, at: at || new Date().toISOString() }, ...state.logEntries].slice(0, 8);
+      renderTicker();
+    }
+
+    function ingestAlertsAndSocial(payload) {
+      (payload.alerts || []).forEach((alert) => {
+        if (state.seenAlertIds.has(alert.id)) return;
+        state.seenAlertIds.add(alert.id);
+        addLog(alert.title, alert.severity || "watch");
+      });
+      (payload.socialPosts || []).forEach((post) => {
+        const seen = state.seenSocialPostIds.has(post.id);
+        state.seenSocialPostIds.add(post.id);
+        if (!seen && isRecentPost(post)) {
+          const line = `New post - ${socialPostExcerpt(post)}`;
+          addLog(line, "watch", post.postedAt);
+          showSocialPopup(post);
+        }
+      });
+    }
+
+    function showSocialPopup(post) {
+      const popup = $("socialPopup");
+      popup.replaceChildren();
+      popup.appendChild(create("strong", "", `New ${post.platform === "instagram" ? "Instagram" : "Facebook"} post`));
+      popup.appendChild(create("p", "", socialPostExcerpt(post)));
+      popup.classList.remove("hidden");
+      window.setTimeout(() => popup.classList.add("hidden"), SOCIAL_NOTICE_MS);
+    }
+
+    function renderAlertOverlay(payload) {
+      const overlay = $("alertOverlay");
+      const alert = (payload.alerts || []).find((item) => item.severity === "critical") || (payload.alerts || [])[0];
+      if (!alert) {
+        overlay.className = "alert-overlay hidden";
+        overlay.replaceChildren();
+        return;
+      }
+      overlay.className = `alert-overlay ${alert.severity || "watch"}`;
+      overlay.replaceChildren();
+      overlay.appendChild(create("strong", "", alert.title));
+      overlay.appendChild(create("p", "", alert.detail));
+    }
+
+    function renderTicker() {
+      const track = $("tickerTrack");
+      const items = state.logEntries.length ? state.logEntries : [{ id: "empty", text: "system log initializing", severity: "info", at: new Date().toISOString() }];
+      track.replaceChildren();
+      [...items, ...items].forEach((entry, index) => {
+        const row = create("span", `ticker-entry ${entry.severity || "info"}`);
+        row.appendChild(create("span", "ticker-time", timeLabel(entry.at)));
+        row.appendChild(create("span", "ticker-text", entry.text));
+        row.dataset.id = `${entry.id}-${index}`;
+        track.appendChild(row);
+      });
+      window.requestAnimationFrame(() => {
+        const width = track.scrollWidth / 2;
+        track.style.animationDuration = `${Math.max(12, width / TICKER_PX_PER_SECOND)}s`;
+      });
+    }
+
+    function render() {
+      const payload = state.payload || defaultPayload();
+      renderHeader(payload);
+      renderIncident(payload);
+      renderPulse(payload);
+      renderTraffic(payload);
+      renderGeo(payload);
+      renderDatabase(payload);
+      renderLiveStream(payload);
+      renderWeather(payload);
+      renderCameras(payload);
+      renderAlertOverlay(payload);
+      ingestAlertsAndSocial(payload);
+      renderTicker();
+    }
+
+    function playTone(urgent) {
+      if (!state.audioContext) return;
+      const context = state.audioContext;
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = urgent ? "sawtooth" : "sine";
+      oscillator.frequency.setValueAtTime(urgent ? 760 : 520, context.currentTime);
+      oscillator.frequency.setValueAtTime(urgent ? 480 : 680, context.currentTime + 0.18);
+      gain.gain.setValueAtTime(0.0001, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(urgent ? 0.18 : 0.1, context.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.45);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start();
+      oscillator.stop(context.currentTime + 0.48);
+    }
+
+    $("audioButton").addEventListener("click", async () => {
+      state.audioContext = state.audioContext || new window.AudioContext();
+      await state.audioContext.resume();
+      state.audioUnlocked = true;
+      $("audioButton").textContent = "test audio";
+      playTone(false);
+    });
+
+    $("refreshButton").addEventListener("click", () => { void load(); });
+
+    window.setInterval(() => {
+      const payload = state.payload || defaultPayload();
+      renderHeader(payload);
+      const refreshSeconds = payload.trafficCameras?.refreshSeconds || 60;
+      if (Date.now() - state.cameraRefreshAt >= refreshSeconds * 1000) {
+        state.cameraRefreshAt = Date.now();
+        renderCameras(payload);
+      }
+    }, 1000);
+
+    window.setInterval(() => { void load(); }, POLL_MS);
+    window.setInterval(() => {
+      const posts = state.payload?.socialPosts || [];
+      const usePost = posts.length > 0 && Math.random() < 0.5;
+      if (usePost) {
+        const post = posts[state.headlineIndex % posts.length];
+        state.headlineIndex += 1;
+        addLog(socialPostExcerpt(post), "info", post.postedAt || new Date().toISOString());
+      } else {
+        addLog(HEARTBEAT_LINES[Math.floor(Math.random() * HEARTBEAT_LINES.length)], "info");
+      }
+    }, 180000);
+
+    render();
+    void load();
+  </script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 export type ServerConfig = {
   wallboardAccessToken: string | null;
+  wallboardAllowedOrigins: string[];
   gaPropertyId: string | null;
   databaseDashboardUrl: string | null;
   databaseRefreshSeconds: number;
@@ -39,6 +40,13 @@ function boolFromEnv(name: string, fallback: boolean) {
 export function getServerConfig(): ServerConfig {
   return {
     wallboardAccessToken: process.env.WALLBOARD_ACCESS_TOKEN || null,
+    // Comma-separated origins allowed to fetch /api/wallboard cross-origin
+    // (e.g. a static index.html hosted on a different domain). Empty means
+    // same-origin only — no CORS headers are added, matching prior behavior.
+    wallboardAllowedOrigins: (process.env.WALLBOARD_ALLOWED_ORIGIN || "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
     gaPropertyId: process.env.GA_PROPERTY_ID || null,
     databaseDashboardUrl: process.env.DATABASE_DASHBOARD_URL || null,
     databaseRefreshSeconds: numberFromEnv("DATABASE_REFRESH_SECONDS", 60),

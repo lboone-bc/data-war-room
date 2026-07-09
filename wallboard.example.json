@@ -1,0 +1,83 @@
+{
+  "generatedAt": "2026-07-09T00:00:00.000Z",
+  "mode": "setup",
+  "config": {
+    "databaseDashboardUrl": null,
+    "databaseRefreshSeconds": 60,
+    "databaseFrameViewportWidth": 1024,
+    "databaseFrameViewportHeight": 640,
+    "databaseFrameCropBottom": 96,
+    "databaseFrameDarkMode": true,
+    "audioEnabled": true,
+    "audioCooldownSeconds": 180,
+    "healthcheckTarget": null
+  },
+  "analytics": {
+    "status": "setup",
+    "message": "Copy this file to wallboard.json and replace with sanitized public wallboard data.",
+    "fetchedAt": null,
+    "cacheSeconds": 180,
+    "activeUsers": null,
+    "eventCount": null,
+    "minuteTrend": [],
+    "topPages": [],
+    "topSources": [],
+    "geo": []
+  },
+  "systems": {
+    "website": {
+      "label": "Website",
+      "status": "nominal",
+      "latencyMs": null,
+      "checkedAt": "2026-07-09T00:00:00.000Z",
+      "detail": null
+    },
+    "ssl": {
+      "label": "SSL",
+      "status": "nominal",
+      "daysRemaining": null,
+      "expiresAt": null
+    },
+    "dataFreshness": {
+      "label": "Analytics freshness",
+      "status": "watch",
+      "ageSeconds": null
+    },
+    "databaseMonitors": {
+      "label": "All Monitors",
+      "status": "nominal",
+      "downCount": null,
+      "checkedAt": null,
+      "detail": null
+    }
+  },
+  "alerts": [],
+  "socialPosts": [],
+  "liveStream": {
+    "enabled": false,
+    "live": false,
+    "videoId": null,
+    "channelUrl": "",
+    "fallback": null
+  },
+  "localWeather": {
+    "status": "setup",
+    "message": "Weather unavailable",
+    "location": "Arden, NC",
+    "updatedAt": null,
+    "current": {
+      "temperatureF": null,
+      "condition": null,
+      "humidity": null,
+      "windMph": null,
+      "windDirection": null,
+      "observedAt": null,
+      "station": null
+    },
+    "forecast": []
+  },
+  "trafficCameras": {
+    "refreshSeconds": 60,
+    "cameras": []
+  }
+}

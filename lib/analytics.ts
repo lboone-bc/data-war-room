@@ -10,6 +10,7 @@ type AnalyticsResult = {
 };
 
 const ANALYTICS_CACHE_MS = 180_000;
+const ANALYTICS_CACHE_SECONDS = ANALYTICS_CACHE_MS / 1000;
 // GA's Realtime API property-token quota resets on the clock hour rather than
 // on a rolling window from the failed request, so the backoff targets the
 // next hour boundary (plus a small buffer for clock skew) instead of a fixed
@@ -94,6 +95,8 @@ function usableCity(city: string) {
 const EMPTY_ANALYTICS: AnalyticsSnapshot = {
   status: "setup",
   message: null,
+  fetchedAt: null,
+  cacheSeconds: ANALYTICS_CACHE_SECONDS,
   activeUsers: null,
   eventCount: null,
   minuteTrend: [],
@@ -147,7 +150,8 @@ function degradedAnalytics(message: string): AnalyticsResult {
     analytics: {
       ...EMPTY_ANALYTICS,
       status: "degraded",
-      message
+      message,
+      fetchedAt: new Date().toISOString()
     },
     mode: "degraded",
     error: message
@@ -327,6 +331,8 @@ async function fetchAnalyticsFromGa(config: ServerConfig): Promise<AnalyticsResu
       analytics: {
         status: "live",
         message: null,
+        fetchedAt: new Date().toISOString(),
+        cacheSeconds: ANALYTICS_CACHE_SECONDS,
         activeUsers,
         eventCount,
         minuteTrend,

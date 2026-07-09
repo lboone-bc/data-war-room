@@ -5,7 +5,7 @@ export default function Home() {
     <main className="home">
       <section className="home-panel">
         <p className="eyebrow">Private wallboard</p>
-        <h1>Data Monitoring Room</h1>
+        <h1>Data War Room</h1>
         <p>
           A cinematic realtime operations display built for a single landscape TV.
         </p>
@@ -16,4 +16,3 @@ export default function Home() {
     </main>
   );
 }
-

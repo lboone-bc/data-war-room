@@ -106,7 +106,6 @@ a {
 }
 
 .command-header,
-.wall-footer,
 .incident,
 .panel {
   position: relative;
@@ -140,6 +139,8 @@ a {
 
 .header-cluster,
 .clock,
+.header-stats,
+.countdown,
 .audio-button,
 .icon-button {
   display: flex;
@@ -148,6 +149,8 @@ a {
 }
 
 .clock,
+.header-stats,
+.countdown,
 .audio-button,
 .icon-button {
   min-height: 38px;
@@ -160,6 +163,49 @@ a {
   padding: 0 13px;
   min-width: 148px;
   justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.header-stats {
+  max-width: min(46vw, 760px);
+  padding: 0 12px;
+  gap: 12px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.header-stats span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.countdown {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 142px;
+  padding: 0 12px;
+  gap: 1px;
+  color: var(--amber);
+  text-transform: uppercase;
+}
+
+.countdown span {
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.countdown strong {
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
@@ -274,13 +320,13 @@ a {
 .wall-grid {
   display: grid;
   grid-template-columns: 1fr 1fr 0.95fr 0.95fr 1.18fr;
-  grid-template-rows: minmax(200px, 0.9fr) 1.55fr 0.75fr;
+  grid-template-rows: minmax(220px, 0.9fr) 1.55fr 0.75fr;
   gap: 14px;
-  /* 224px = header + incident banner + footer + wallboard padding (see
-     .command-header/.incident/.wall-footer/.wallboard); +48px reserves the
-     full-width .ticker-bar (14px margin-top + 34px height) added below the
+  /* 198px = header + incident banner + wallboard padding (see
+     .command-header/.incident/.wallboard); +58px reserves the
+     full-width .ticker-bar (14px margin-top + 44px height) added below the
      grid. Keep both in sync if either block's height changes. */
-  height: calc(100vh - 272px);
+  height: calc(100vh - 256px);
   min-height: 0;
 }
 
@@ -324,17 +370,15 @@ a {
 }
 
 .hero-panel {
-  grid-column: span 2;
+  grid-column: 1 / 2;
   grid-row: 1;
   display: grid;
-  grid-template-rows: 38px 142px minmax(0, 1fr);
-  container-type: size;
-  container-name: hero-panel;
+  grid-template-rows: 38px minmax(0, 1fr);
 }
 
 /* Cols 3-4 (the database dashboard + live stream) opt out of the shared
    3-row track entirely and split their own height independently, so their
-   ratio can be tuned without touching hero-panel/geo-panel, which still rely
+   ratio can be tuned without touching the left-side panels, which still rely
    on those shared row lines. Previously database-panel spanned rows 1-2
    (~77% of the column) and livestream-panel got only row 3 (~23%) — the
    database dashboard doesn't need that much room (its scaled iframe just
@@ -367,6 +411,8 @@ a {
 }
 
 .traffic-panel {
+  grid-column: 2 / 3;
+  grid-row: 1;
   min-height: 0;
 }
 
@@ -374,7 +420,7 @@ a {
   grid-column: 5 / 6;
   grid-row: 1 / 4;
   display: grid;
-  grid-template-rows: minmax(220px, 0.95fr) minmax(306px, 1.22fr) minmax(210px, 0.84fr);
+  grid-template-rows: minmax(220px, 0.72fr) minmax(0, 1.78fr);
   gap: 14px;
   min-height: 0;
 }
@@ -439,7 +485,7 @@ a {
 
 .weather-panel {
   display: grid;
-  grid-template-rows: 38px auto minmax(0, 1fr) 20px;
+  grid-template-rows: 38px auto minmax(0, 1fr);
 }
 
 .weather-current {
@@ -457,7 +503,6 @@ a {
 }
 
 .weather-current span,
-.weather-updated,
 .camera-refresh {
   color: var(--muted);
   font-size: 10px;
@@ -510,8 +555,8 @@ a {
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 7px;
-  padding: 7px 10px;
+  gap: 6px;
+  padding: 6px 9px 8px;
 }
 
 .forecast-card {
@@ -519,7 +564,7 @@ a {
   min-height: 0;
   border: 1px solid rgba(111, 231, 255, 0.15);
   background: rgba(2, 8, 13, 0.52);
-  padding: 7px;
+  padding: 6px;
   overflow: hidden;
 }
 
@@ -536,24 +581,23 @@ a {
 
 .forecast-card strong {
   display: block;
-  margin: 3px 0;
+  margin: 2px 0;
   color: var(--text);
-  font-size: 21px;
+  font-size: 19px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
 .forecast-card small {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .forecast-card em {
-  -webkit-line-clamp: 2;
-  font-size: 11px;
+  -webkit-line-clamp: 1;
+  font-size: 10px;
 }
 
-.weather-updated,
 .camera-refresh {
   display: flex;
   align-items: center;
@@ -570,7 +614,7 @@ a {
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(4, minmax(0, 1fr));
   gap: 8px;
   padding: 10px 10px 6px;
 }
@@ -595,24 +639,6 @@ a {
   object-fit: cover;
 }
 
-.camera-tile > span {
-  position: absolute;
-  left: 6px;
-  right: 6px;
-  bottom: 6px;
-  overflow: hidden;
-  border: 1px solid rgba(111, 231, 255, 0.24);
-  background: rgba(0, 6, 10, 0.7);
-  color: var(--text);
-  padding: 3px 5px;
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
 .camera-failed {
   position: absolute;
   inset: 0;
@@ -628,56 +654,22 @@ a {
   text-transform: uppercase;
 }
 
-.metric-row {
-  min-height: 0;
+.pulse-metrics {
   display: grid;
-  grid-template-columns: minmax(210px, 0.74fr) 1.35fr;
-  align-items: stretch;
-  gap: 12px;
-  padding: 0 18px;
-  overflow: hidden;
-}
-
-.big-number {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.big-number span {
-  min-height: 0.86em;
-  font-size: clamp(66px, 8vw, 140px);
-  line-height: 0.86;
-  color: var(--cyan);
-  font-weight: 900;
-  font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 28px rgba(79, 235, 255, 0.4);
-}
-
-.big-number label {
-  margin-top: 8px;
-  color: var(--muted);
-  text-transform: uppercase;
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.14em;
-}
-
-.mini-metrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: center;
   gap: 10px;
   min-height: 0;
+  padding: 12px;
 }
 
-.mini-metrics div {
+.pulse-metrics div {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  aspect-ratio: 1;
   min-width: 0;
   min-height: 0;
-  height: calc(100% - 12px);
-  margin: 6px 0;
   border: 1px solid var(--line);
   background: rgba(2, 8, 13, 0.52);
   padding: 12px;
@@ -685,24 +677,18 @@ a {
   container-type: inline-size;
 }
 
-.mini-metrics svg {
+.pulse-metrics svg {
   color: var(--green);
 }
 
-.mini-metrics strong {
+.pulse-metrics strong {
   margin-top: 10px;
   min-height: 1.05em;
-  /* Sized off the stat box's own rendered width (cqw), not the viewport
-     (vw) — this box sits four grid levels deep (wall-grid > hero-panel >
-     metric-row > mini-metrics), so its actual pixel width has little
-     relation to overall viewport width. vw let long numbers keep growing
-     with screen size even as the box itself stayed comparatively narrow,
-     spilling the digits past the box border. */
   font-size: clamp(16px, 16cqw, 40px);
   font-variant-numeric: tabular-nums;
 }
 
-.mini-metrics span {
+.pulse-metrics span {
   color: var(--muted);
   font-size: 10px;
   text-transform: uppercase;
@@ -710,83 +696,10 @@ a {
   line-height: 1.25;
 }
 
-.trend {
-  min-height: 0;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) 20px;
-  padding: 12px 18px 16px;
-}
-
-.pulse-bars {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  align-items: end;
-  gap: 7px;
-  border: 1px solid rgba(111, 231, 255, 0.13);
-  background:
-    linear-gradient(rgba(111, 231, 255, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(111, 231, 255, 0.08) 1px, transparent 1px),
-    rgba(0, 6, 10, 0.5);
-  background-size: 10% 25%, 10% 25%, auto;
-}
-
-.pulse-bars span {
-  display: block;
-  min-height: 8%;
-  border-top: 2px solid var(--cyan);
-  background:
-    linear-gradient(180deg, rgba(79, 235, 255, 0.48), rgba(79, 235, 255, 0.08));
-  box-shadow: 0 0 16px rgba(79, 235, 255, 0.14);
-}
-
-.trend-labels {
-  height: 20px;
-  display: flex;
-  justify-content: space-between;
-  color: var(--muted);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Below this height the bar chart has no usable room (its own padding and
-   label row already cost 48px) and just renders as an unreadable sliver, so
-   hide it and let the metric row fill the panel instead. */
-@container hero-panel (max-height: 274px) {
-  .hero-panel {
-    grid-template-rows: 38px minmax(0, 1fr);
-  }
-
-  .trend {
-    display: none;
-  }
-}
-
-.frame-toolbar {
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
-  color: var(--muted);
-  font-size: 11px;
-  text-transform: uppercase;
-  font-weight: 800;
-  border-bottom: 1px solid rgba(111, 231, 255, 0.13);
-}
-
-.frame-toolbar span {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
 .frame-shell,
 .frame-empty {
   width: 100%;
-  height: calc(100% - 72px);
+  height: calc(100% - 38px);
 }
 
 .frame-shell {
@@ -818,11 +731,11 @@ a {
 
 /* .database-frame-summary (All Monitors / Website Check / SSL stat boxes)
    was removed 2026-07-05 to free up room in the Active Database System
-   panel; downCount is still surfaced via the Website Pulse mini-metrics tile. */
+   panel. */
 
 .ticker-bar {
   margin-top: 14px;
-  height: 34px;
+  height: 44px;
 }
 
 .system-log {
@@ -849,24 +762,24 @@ a {
 .ticker-entry {
   display: inline-flex;
   align-items: baseline;
-  gap: 8px;
-  font-size: 11px;
+  gap: 10px;
+  font-size: 15px;
   line-height: 1.3;
   opacity: 0.85;
 }
 
 .ticker-entry::after {
   content: "\25c6";
-  margin: 0 22px;
+  margin: 0 28px;
   color: rgba(111, 231, 255, 0.3);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .ticker-time {
   flex: 0 0 auto;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  font-size: 10px;
+  font-size: 12px;
   opacity: 0.7;
 }
 
@@ -897,6 +810,50 @@ a {
   to {
     transform: translateX(-50%);
   }
+}
+
+.social-post-popup {
+  position: fixed;
+  top: 252px;
+  right: clamp(18px, 2vw, 34px);
+  z-index: 9;
+  width: min(620px, calc(100vw - 36px));
+  border: 1px solid rgba(255, 209, 102, 0.88);
+  background:
+    linear-gradient(180deg, rgba(255, 209, 102, 0.16), transparent 44%),
+    rgba(5, 10, 14, 0.96);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 0 42px rgba(255, 209, 102, 0.28),
+    0 26px 68px rgba(0, 0, 0, 0.42);
+  padding: 18px 20px;
+}
+
+.social-post-popup > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--amber);
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.social-post-popup p {
+  margin: 12px 0 10px;
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.social-post-popup time {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .dashboard-frame {
@@ -941,22 +898,26 @@ a {
   gap: 8px;
 }
 
-.rank-list.compact {
-  gap: 4px;
-  padding: 0;
-}
-
-.rank-list.compact div {
-  min-height: 24px;
-}
-
 .traffic-columns {
-  height: calc(100% - 38px);
+  height: calc(100% - 60px);
   min-height: 0;
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 14px;
-  padding: 10px 12px 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 9px 11px 10px;
+}
+
+.traffic-updated {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 11px 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .traffic-columns section {
@@ -966,12 +927,26 @@ a {
 }
 
 .traffic-columns h3 {
-  margin: 0 0 7px;
+  margin: 0 0 6px;
   color: var(--cyan);
   font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+.rank-list.compact {
+  gap: 3px;
+  padding: 0;
+}
+
+.rank-list.compact div {
+  min-height: 21px;
+}
+
+.rank-list.compact span,
+.rank-list.compact strong {
+  font-size: 11px;
 }
 
 .rank-list div,
@@ -1186,19 +1161,6 @@ a {
   color: var(--red);
 }
 
-.wall-footer {
-  height: 26px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-  gap: 16px;
-  color: var(--muted);
-  text-transform: uppercase;
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: 0.11em;
-}
-
 .loading {
   display: grid;
   place-items: center;
@@ -1256,6 +1218,7 @@ a {
   }
 
   .database-panel,
+  .database-column,
   .geo-panel,
   .hero-panel,
   .ops-column,
@@ -1266,6 +1229,10 @@ a {
 
   .ops-column {
     grid-template-rows: auto;
+  }
+
+  .traffic-columns {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1283,9 +1250,29 @@ a {
   }
 
   .clock,
+  .header-stats,
+  .countdown,
   .audio-button,
   .icon-button {
     min-height: 32px;
+  }
+
+  .header-stats {
+    max-width: 40vw;
+    gap: 8px;
+    font-size: 9px;
+  }
+
+  .countdown {
+    min-width: 118px;
+  }
+
+  .countdown span {
+    font-size: 8px;
+  }
+
+  .countdown strong {
+    font-size: 14px;
   }
 
   .incident {
@@ -1296,40 +1283,33 @@ a {
 
   .ticker-bar {
     margin-top: 8px;
-    height: 28px;
+    height: 34px;
   }
 
   .wall-grid {
-    /* +36px reserves the shrunk .ticker-bar (8px margin-top + 28px height)
+    /* +42px reserves the shrunk .ticker-bar (8px margin-top + 34px height)
        above, same reasoning as the base .wall-grid rule. */
-    height: calc(100vh - 192px);
+    height: calc(100vh - 172px);
     gap: 10px;
   }
 
   .ops-column {
     gap: 10px;
-    grid-template-rows: minmax(152px, 0.78fr) minmax(230px, 1.2fr) minmax(184px, 0.92fr);
+    grid-template-rows: minmax(152px, 0.66fr) minmax(0, 1.7fr);
   }
 
   .panel-header {
     height: 32px;
   }
 
-  .frame-toolbar {
-    height: 28px;
-  }
-
   .frame-shell,
   .frame-empty {
-    height: calc(100% - 60px);
+    height: calc(100% - 32px);
   }
 
-  .metric-row {
-    padding: 10px 12px 0;
-  }
-
-  .trend {
-    padding: 4px 12px 8px;
+  .pulse-metrics {
+    padding: 9px;
+    gap: 8px;
   }
 
   .rank-list,
@@ -1350,7 +1330,6 @@ a {
     grid-template-rows: 32px minmax(0, 1fr);
   }
 
-  .weather-updated,
   .camera-refresh {
     display: none;
   }
@@ -1363,6 +1342,24 @@ a {
   .camera-grid {
     padding: 7px;
     gap: 6px;
+  }
+
+  .ticker-entry {
+    font-size: 13px;
+  }
+
+  .ticker-time {
+    font-size: 11px;
+  }
+
+  .social-post-popup {
+    top: 174px;
+    width: min(520px, calc(100vw - 24px));
+    padding: 14px 16px;
+  }
+
+  .social-post-popup p {
+    font-size: 18px;
   }
 
   .forecast-card {

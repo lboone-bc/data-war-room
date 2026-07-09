@@ -3,7 +3,6 @@
 import {
   Activity,
   AlertTriangle,
-  Bell,
   Camera,
   Clock3,
   CloudSun,
@@ -30,6 +29,7 @@ import worldAtlas from "world-atlas/countries-110m.json";
 
 const POLL_MS = 30000;
 const MAP_VIEWBOX_HEIGHT = 56;
+const ROCK_UPDATE_TARGET = new Date("2026-07-27T00:00:00-04:00").getTime();
 const mapTopology = worldAtlas as unknown as {
   objects: {
     countries: unknown;
@@ -75,6 +75,20 @@ function temperatureLabel(value: number | null) {
 
 function agoSeconds(value: string) {
   return Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
+}
+
+function minutesLabel(seconds: number) {
+  if (seconds % 60 === 0) return `${seconds / 60}m`;
+  return `${seconds}s`;
+}
+
+function countdownLabel(target: number, now: Date) {
+  const remaining = Math.max(0, target - now.getTime());
+  const totalMinutes = Math.floor(remaining / 60_000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  return `${days}d ${hours}h ${minutes}m`;
 }
 
 function useWallboardData() {
@@ -125,9 +139,18 @@ type SystemLogEntry = {
   at: string;
 };
 
+type SocialPostNotice = {
+  id: string;
+  text: string;
+  platform: SocialPost["platform"];
+  postedAt: string;
+};
+
 const LOG_MAX_ENTRIES = 8;
 const AMBIENT_MIN_MS = 120_000;
 const AMBIENT_MAX_MS = 300_000;
+const RECENT_SOCIAL_POST_MS = 5 * 60_000;
+const SOCIAL_NOTICE_MS = 45_000;
 const HEARTBEAT_LINES = [
   "telemetry nominal",
   "dashboard refreshed",
@@ -148,8 +171,17 @@ function socialPostExcerpt(post: SocialPost) {
   return `${label}: ${text}`;
 }
 
+function isRecentSocialPost(post: SocialPost, now = Date.now()) {
+  if (!post.postedAt) return false;
+  const postedAt = new Date(post.postedAt).getTime();
+  if (Number.isNaN(postedAt)) return false;
+  const age = now - postedAt;
+  return age >= 0 && age <= RECENT_SOCIAL_POST_MS;
+}
+
 function useSystemLog(payload: WallboardPayload | null) {
   const [entries, setEntries] = useState<SystemLogEntry[]>([]);
+  const [socialNotice, setSocialNotice] = useState<SocialPostNotice | null>(null);
   const seenAlertIds = useRef<Set<string>>(new Set());
   const seenSocialPostIds = useRef<Set<string>>(new Set());
   const headlineIndex = useRef(0);
@@ -174,16 +206,21 @@ function useSystemLog(payload: WallboardPayload | null) {
     );
   }, [payload]);
 
-  // Surfaces a new Instagram/Facebook post immediately (like a real alert)
-  // instead of waiting for the 2-5 minute ambient rotation below — this is
-  // the "notify when a new posting goes live" behavior. Still ticker-only:
-  // it never touches payload.alerts or the audible-alert system, same as
-  // the rest of this ambient log.
+  // Surface only genuinely fresh Instagram/Facebook posts immediately. Apify
+  // returns the latest post every poll, so ID freshness alone would turn an
+  // old latest post into a "new" alert on every wallboard reload.
   useEffect(() => {
     if (!payload) return;
-    const fresh = payload.socialPosts.filter((post) => !seenSocialPostIds.current.has(post.id));
+    const now = Date.now();
+    const fresh = payload.socialPosts.filter((post) => {
+      const seen = seenSocialPostIds.current.has(post.id);
+      seenSocialPostIds.current.add(post.id);
+      return !seen && isRecentSocialPost(post, now);
+    });
     if (!fresh.length) return;
-    fresh.forEach((post) => seenSocialPostIds.current.add(post.id));
+    const newest = [...fresh].sort(
+      (a, b) => new Date(b.postedAt ?? 0).getTime() - new Date(a.postedAt ?? 0).getTime()
+    )[0];
     setEntries((current) =>
       [
         ...fresh.map((post) => ({
@@ -195,7 +232,21 @@ function useSystemLog(payload: WallboardPayload | null) {
         ...current
       ].slice(0, LOG_MAX_ENTRIES)
     );
+    setSocialNotice({
+      id: newest.id,
+      text: socialPostExcerpt(newest),
+      platform: newest.platform,
+      postedAt: newest.postedAt ?? new Date().toISOString()
+    });
   }, [payload]);
+
+  useEffect(() => {
+    if (!socialNotice) return;
+    const timeout = window.setTimeout(() => {
+      setSocialNotice((current) => (current?.id === socialNotice.id ? null : current));
+    }, SOCIAL_NOTICE_MS);
+    return () => window.clearTimeout(timeout);
+  }, [socialNotice]);
 
   useEffect(() => {
     let timeoutId: number;
@@ -234,7 +285,7 @@ function useSystemLog(payload: WallboardPayload | null) {
     // latest payload via payloadRef instead of closing over the prop.
   }, []);
 
-  return entries;
+  return { entries, socialNotice };
 }
 
 function Panel({
@@ -261,33 +312,6 @@ function Panel({
 
 function StatusPill({ severity }: { severity: Severity }) {
   return <span className={`status-pill ${severity}`}>{severityLabel(severity)}</span>;
-}
-
-function TrendGraph({ payload }: { payload: WallboardPayload }) {
-  const points = payload.analytics.minuteTrend;
-  if (!points.length) {
-    return <div className="blank-state">No realtime trend data</div>;
-  }
-  const max = Math.max(...points.map((point) => point.value), 1);
-
-  return (
-    <div className="trend">
-      <div className="pulse-bars" role="img" aria-label="Realtime users trend">
-        {points.map((point) => (
-          <span
-            key={point.label}
-            title={`${point.label}: ${point.value} active users`}
-            style={{ height: `${Math.max(8, (point.value / max) * 100)}%` }}
-          />
-        ))}
-      </div>
-      <div className="trend-labels">
-        {points.map((point) => (
-          <span key={point.label}>{point.label}</span>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 function playTone(context: AudioContext, urgent = false) {
@@ -447,7 +471,6 @@ function FullscreenButton() {
 
 function DatabaseFrame({ payload }: { payload: WallboardPayload }) {
   const [frameKey, setFrameKey] = useState(0);
-  const [lastRefresh, setLastRefresh] = useState(new Date().toISOString());
   const [frameScale, setFrameScale] = useState(1);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const url = payload.config.databaseDashboardUrl;
@@ -467,7 +490,6 @@ function DatabaseFrame({ payload }: { payload: WallboardPayload }) {
   useEffect(() => {
     const interval = window.setInterval(() => {
       setFrameKey((current) => current + 1);
-      setLastRefresh(new Date().toISOString());
     }, payload.config.databaseRefreshSeconds * 1000);
     return () => window.clearInterval(interval);
   }, [payload.config.databaseRefreshSeconds]);
@@ -503,13 +525,6 @@ function DatabaseFrame({ payload }: { payload: WallboardPayload }) {
 
   return (
     <Panel title="Active Database System" icon={<Database size={18} />} className="database-panel">
-      <div className="frame-toolbar">
-        <span>
-          <RefreshCcw size={14} />
-          refresh {payload.config.databaseRefreshSeconds}s
-        </span>
-        <span>last {timeLabel(lastRefresh)}</span>
-      </div>
       {url ? (
         <div className="frame-shell" ref={shellRef}>
           <div
@@ -720,6 +735,9 @@ function TrafficPanel({ payload }: { payload: WallboardPayload }) {
           </div>
         </section>
       </div>
+      <div className="traffic-updated">
+        today report - GA cache {minutesLabel(payload.analytics.cacheSeconds)} - fetched {timeLabel(payload.analytics.fetchedAt)}
+      </div>
     </Panel>
   );
 }
@@ -763,9 +781,6 @@ function WeatherPanel({ payload }: { payload: WallboardPayload }) {
           </div>
         )) : <div className="blank-row">Forecast unavailable</div>}
       </div>
-      <div className="weather-updated">
-        observed {current.observedAt ? timeLabel(current.observedAt) : "pending"}
-      </div>
     </Panel>
   );
 }
@@ -799,7 +814,6 @@ function TrafficCameraPanel({ payload }: { payload: WallboardPayload }) {
                   setFailedIds((current) => new Set(current).add(camera.id));
                 }}
               />
-              <span>{camera.label}</span>
               {failed ? (
                 <div className="camera-failed">
                   <AlertTriangle size={16} />
@@ -814,6 +828,22 @@ function TrafficCameraPanel({ payload }: { payload: WallboardPayload }) {
         refresh {payload.trafficCameras.refreshSeconds}s - updated {timeLabel(refreshedAt.toISOString())}
       </div>
     </Panel>
+  );
+}
+
+function SocialPostPopup({ notice }: { notice: SocialPostNotice | null }) {
+  if (!notice) return null;
+  const platform = notice.platform === "instagram" ? "Instagram" : "Facebook";
+
+  return (
+    <aside className="social-post-popup" role="status" aria-live="polite">
+      <div>
+        <RadioTower size={24} />
+        <span>New {platform} post</span>
+      </div>
+      <p>{notice.text}</p>
+      <time>{timeLabel(notice.postedAt)}</time>
+    </aside>
   );
 }
 
@@ -986,21 +1016,13 @@ function IncidentBanner({
 
 export default function WallboardPage() {
   const { payload, error, lastUpdated, reload } = useWallboardData();
-  const logEntries = useSystemLog(payload);
+  const { entries: logEntries, socialNotice } = useSystemLog(payload);
   const [clock, setClock] = useState(new Date());
 
   useEffect(() => {
     const interval = window.setInterval(() => setClock(new Date()), 1000);
     return () => window.clearInterval(interval);
   }, []);
-
-  const peak = useMemo(() => {
-    if (!payload) return 0;
-    const values = payload.analytics.minuteTrend.map((point) => point.value);
-    if (payload.analytics.activeUsers !== null) values.push(payload.analytics.activeUsers);
-    if (!values.length) return null;
-    return Math.max(...values);
-  }, [payload]);
 
   if (!payload) {
     return (
@@ -1020,9 +1042,19 @@ export default function WallboardPage() {
       <header className="command-header">
         <div>
           <p className="eyebrow">Realtime operations wall</p>
-          <h1>Monitoring Room</h1>
+          <h1>War Room</h1>
         </div>
         <div className="header-cluster">
+          <div className="header-stats">
+            <span>{payload.mode === "live" ? "live telemetry" : `${payload.mode} telemetry`}</span>
+            {payload.analytics.message ? <span>{payload.analytics.message}</span> : null}
+            <span>api age {lastUpdated ? `${agoSeconds(lastUpdated)}s` : "pending"}</span>
+            <span>generated {timeLabel(payload.generatedAt)}</span>
+          </div>
+          <div className="countdown" title="Rock Update countdown">
+            <span>Rock Update!</span>
+            <strong>{countdownLabel(ROCK_UPDATE_TARGET, clock)}</strong>
+          </div>
           <div className="clock">
             <Clock3 size={18} />
             {clock.toLocaleTimeString([], {
@@ -1045,39 +1077,25 @@ export default function WallboardPage() {
 
       <IncidentBanner payload={payload} error={error} />
       <AlertOverlay alerts={payload.alerts} />
+      <SocialPostPopup notice={socialNotice} />
 
       <section className="wall-grid">
         <Panel title="Website Pulse" icon={<Activity size={18} />} className="hero-panel">
-          <div className="metric-row">
-            <div className="big-number">
-              <span>{numberLabel(payload.analytics.activeUsers)}</span>
-              <label>active users in last 30m</label>
+          <div className="pulse-metrics">
+            <div title="GA active users from the realtime report.">
+              <RadioTower size={19} />
+              <strong>{numberLabel(payload.analytics.activeUsers)}</strong>
+              <span>Active last 30m</span>
             </div>
-            <div className="mini-metrics">
-              <div title="GA eventCount from the realtime report. This counts user interactions GA receives during the realtime window.">
-                <Signal size={18} />
-                <strong>{numberLabel(payload.analytics.eventCount)}</strong>
-                <span>GA events last 30m</span>
-              </div>
-              <div title="Highest active-user value seen in the displayed realtime minute trend.">
-                <RadioTower size={18} />
-                <strong>{numberLabel(peak)}</strong>
-                <span>peak minute last 30m</span>
-              </div>
-              <div title="Active alerts generated from traffic thresholds, website health, SSL, and monitor status.">
-                <Bell size={18} />
-                <strong>{payload.alerts.length}</strong>
-                <span>active alerts</span>
-              </div>
-              <div title={payload.systems.databaseMonitors.detail || undefined}>
-                <ShieldCheck size={18} />
-                <strong>{payload.systems.databaseMonitors.downCount ?? ""}</strong>
-                <span>All Monitors down</span>
-              </div>
+            <div title="GA eventCount from the realtime report. This counts user interactions GA receives during the realtime window.">
+              <Signal size={19} />
+              <strong>{numberLabel(payload.analytics.eventCount)}</strong>
+              <span>GA events last 30m</span>
             </div>
           </div>
-          <TrendGraph payload={payload} />
         </Panel>
+
+        <TrafficPanel payload={payload} />
 
         <div className="database-column">
           <DatabaseFrame payload={payload} />
@@ -1089,20 +1107,12 @@ export default function WallboardPage() {
         <div className="ops-column">
           <WeatherPanel payload={payload} />
           <TrafficCameraPanel payload={payload} />
-          <TrafficPanel payload={payload} />
         </div>
       </section>
 
       <div className="ticker-bar">
         <SystemLog entries={logEntries} />
       </div>
-
-      <footer className="wall-footer">
-        <span>{payload.mode === "live" ? "live telemetry" : `${payload.mode} telemetry`}</span>
-        {payload.analytics.message ? <span>{payload.analytics.message}</span> : null}
-        <span>api age {lastUpdated ? `${agoSeconds(lastUpdated)}s` : "pending"}</span>
-        <span>generated {timeLabel(payload.generatedAt)}</span>
-      </footer>
     </main>
   );
 }

@@ -102,6 +102,8 @@ export type WallboardPayload = {
   analytics: {
     status: FeedState;
     message: string | null;
+    fetchedAt: string | null;
+    cacheSeconds: number;
     activeUsers: number | null;
     eventCount: number | null;
     minuteTrend: MinutePoint[];

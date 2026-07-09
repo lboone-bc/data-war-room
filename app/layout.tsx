@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Data Monitoring Room",
+  title: "Data War Room",
   description: "Private cinematic wallboard for realtime data operations."
 };
 
@@ -23,4 +23,3 @@ export default function RootLayout({
     </html>
   );
 }
-

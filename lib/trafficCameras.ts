@@ -22,6 +22,26 @@ export const TRAFFIC_CAMERAS: TrafficCamera[] = [
     id: "4839",
     label: "DriveNC CCTV 4839",
     url: "https://www.drivenc.gov/map/Cctv/4839"
+  },
+  {
+    id: "4224",
+    label: "DriveNC CCTV 4224",
+    url: "https://www.drivenc.gov/map/Cctv/4224"
+  },
+  {
+    id: "4221",
+    label: "DriveNC CCTV 4221",
+    url: "https://www.drivenc.gov/map/Cctv/4221"
+  },
+  {
+    id: "ipcamlive-3bwa7esgv64g9mu5x",
+    label: "Location Camera 1",
+    url: "https://s59.ipcamlive.com/streams/3bwa7esgv64g9mu5x/snapshot.jpg"
+  },
+  {
+    id: "ipcamlive-1cvoiombj6sxjywzv",
+    label: "Location Camera 2",
+    url: "https://s28.ipcamlive.com/streams/1cvoiombj6sxjywzv/snapshot.jpg"
   }
 ];
 

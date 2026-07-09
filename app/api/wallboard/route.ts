@@ -22,13 +22,37 @@ function hasAccess(request: NextRequest, expectedToken: string | null) {
   return headerToken === expectedToken || queryToken === expectedToken;
 }
 
+// Only echoes Access-Control-Allow-Origin back for an explicitly allowed
+// origin (never "*", since the token can travel as a header) — lets a
+// cross-origin static index.html deployment call this route from the
+// browser. Same-origin callers (e.g. /wallboard) are unaffected either way.
+function corsHeaders(
+  request: NextRequest,
+  config: ReturnType<typeof getServerConfig>
+): Record<string, string> {
+  const origin = request.headers.get("origin");
+  if (!origin || !config.wallboardAllowedOrigins.includes(origin)) return {};
+  return {
+    "Access-Control-Allow-Origin": origin,
+    Vary: "Origin",
+    "Access-Control-Allow-Headers": "x-wallboard-token, content-type",
+    "Access-Control-Allow-Methods": "GET, OPTIONS"
+  };
+}
+
+export async function OPTIONS(request: NextRequest) {
+  const config = getServerConfig();
+  return new NextResponse(null, { status: 204, headers: corsHeaders(request, config) });
+}
+
 export async function GET(request: NextRequest) {
   const config = getServerConfig();
+  const cors = corsHeaders(request, config);
 
   if (!hasAccess(request, config.wallboardAccessToken)) {
     return NextResponse.json(
       { error: "Wallboard access token is missing or invalid." },
-      { status: 401 }
+      { status: 401, headers: cors }
     );
   }
 
@@ -108,7 +132,15 @@ export async function GET(request: NextRequest) {
     localWeather,
     trafficCameras: {
       refreshSeconds: TRAFFIC_CAMERA_REFRESH_SECONDS,
-      cameras: TRAFFIC_CAMERAS
+      // Absolute proxy URL (not the raw upstream vendor URL) built from this
+      // request's own origin, so it resolves correctly whether the caller is
+      // the same-origin /wallboard page or a static index.html hosted on a
+      // different domain. Never expose the real DriveNC/IPCamLive URLs here.
+      cameras: TRAFFIC_CAMERAS.map((camera) => ({
+        id: camera.id,
+        label: camera.label,
+        url: `${request.nextUrl.origin}/api/traffic-camera/${camera.id}`
+      }))
     }
   };
 
@@ -116,7 +148,8 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json(payload, {
     headers: {
-      "Cache-Control": "no-store"
+      "Cache-Control": "no-store",
+      ...cors
     }
   });
 }
