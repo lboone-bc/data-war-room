@@ -516,7 +516,12 @@
     };
 
     const params = new URLSearchParams(window.location.search);
-    const configuredApi = params.get("api") || window.localStorage.getItem("wallboard_api_url") || "wallboard.json";
+    // Defaults to the same-origin Next.js API route, since this file is now
+    // deployed alongside it (see public/ in the Next.js app, served on
+    // Railway). Still overridable with ?api=<url> for any other hosting
+    // arrangement (e.g. a plain wallboard.json file on separate static
+    // hosting with no backend at all).
+    const configuredApi = params.get("api") || window.localStorage.getItem("wallboard_api_url") || "/api/wallboard";
     const configuredToken = params.get("token") || window.localStorage.getItem("wallboard_token") || "";
     if (params.get("api")) window.localStorage.setItem("wallboard_api_url", configuredApi);
     if (params.get("token")) window.localStorage.setItem("wallboard_token", configuredToken);

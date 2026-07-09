@@ -23,24 +23,19 @@ This kills whatever's on port 3000 (including a hung `next dev`), switches to th
 
 ## Static Wallboard
 
-The root [index.html](/Users/lboone/Documents/Data%20Monitoring%20Room/index.html) is a self-contained static wallboard that can be served by any static web server. By default it looks for `wallboard.json` in the same folder:
+[public/index.html](/Users/lboone/Documents/Data%20Monitoring%20Room/public/index.html) is a self-contained, dependency-free static wallboard (plain HTML/CSS/JS, no build step, no framework). It lives in Next.js's `public/` folder so it deploys automatically alongside the app and is reachable at `/index.html` on whatever host serves this app — e.g. on Railway, `https://<your-app>.up.railway.app/index.html`. By default it fetches `/api/wallboard` on the same origin, so a normal single-host deployment (see "Publishing on the Internet" below) needs no extra configuration at all — same origin, no CORS, no separate data file to maintain.
+
+It can still be pointed at a different JSON source if needed (e.g. a second static-only mirror hosted elsewhere with no backend of its own):
 
 ```text
-https://static-host.example/index.html
-https://static-host.example/wallboard.json
+https://your-app.example/index.html?api=https://example.com/wallboard.json
 ```
 
-Use [wallboard.example.json](/Users/lboone/Documents/Data%20Monitoring%20Room/wallboard.example.json) as the schema reference, copy it to `wallboard.json`, and replace it with the public wallboard payload you want the static file to render. `wallboard.json` is ignored by git so live/generated data is not committed accidentally.
+Use [wallboard.example.json](/Users/lboone/Documents/Data%20Monitoring%20Room/wallboard.example.json) as the schema reference for that case; a `wallboard.json` you create yourself for it is gitignored so live/generated data is never committed.
 
-You can still override the data URL if needed:
+The static HTML never contains Google Analytics credentials, Apify tokens, private keys, or provider API keys. Those must remain outside committed source. The browser only receives the wallboard JSON payload. If no JSON is reachable, the static page shows setup/degraded states instead of embedding secrets or crashing.
 
-```text
-https://static-host.example/index.html?api=https://example.com/wallboard.json
-```
-
-The static HTML never contains Google Analytics credentials, Apify tokens, private keys, or provider API keys. Those must remain outside committed source. The browser only receives the wallboard JSON payload. If no JSON file is reachable, the static page shows setup/degraded states instead of embedding secrets or crashing.
-
-Do not put provider secrets in query strings, local storage, JavaScript constants, or the committed static file.
+Do not put provider secrets in query strings, local storage, JavaScript constants, or the committed static file — this was evaluated and explicitly rejected during this app's public-hosting design pass; see `AGENTS.md`.
 
 ## Configuration
 
@@ -81,20 +76,19 @@ APIFY_FACEBOOK_PAGE_URL=https://www.facebook.com/mybiltmorechurch/
 
 ## Publishing on the Internet
 
-This app is split into two independently hostable pieces on purpose, and they are meant to be deployed **separately**:
+**Deployment target: Railway** (railway.com). Railway runs a persistent Node process, so it hosts the whole app — the static wallboard (`public/index.html`) and the secure API (`app/api/wallboard/route.ts`, `app/api/traffic-camera/[id]/route.ts`) — as a **single deployment on one domain**. No CORS setup, no second hosting account, no split-host wiring; `/index.html` fetches `/api/wallboard` same-origin automatically.
 
-1. **The static wallboard** (`index.html`) — plain HTML/CSS/JS, no build step, no server requirement, no credentials. It can be uploaded via FTP/cPanel File Manager to almost any web host, including classic shared hosting that only serves static files.
-2. **The secure API** (this Next.js app, specifically `app/api/wallboard/route.ts` and `app/api/traffic-camera/[id]/route.ts`) — holds every provider credential (GA service account, Apify token, monitor status URL, etc.) and must run on a host that can execute a persistent Node process. **Classic shared hosting cannot run this piece.**
+Setup:
 
-Recommended setup:
+1. Push this repo to a git remote (Railway deploys from a connected GitHub repo, or via `railway up` from the Railway CLI without GitHub).
+2. In Railway, create a new project from that repo. `railway.json` at repo root pins the Nixpacks builder and start command (`npm run start`, which binds `next start` to `0.0.0.0` so Railway's network can reach it); `package.json`'s `engines.node` and `.nvmrc` pin Node 20.x, avoiding this repo's documented Node v24 `next dev`/`next start` hang.
+3. In the Railway project's Variables tab, set every value from [.env.example](/Users/lboone/Documents/Data%20Monitoring%20Room/.env.example) — this is where all provider secrets live. Never put them in code or in `public/index.html`.
+4. Set `WALLBOARD_ACCESS_TOKEN` to a long random value (`openssl rand -hex 32`) **before** the deployment goes live. It's opt-in by design (unset means the API responds to anyone), so this step is not optional once the app is reachable from the public internet.
+5. Open `https://<your-app>.up.railway.app/index.html?token=<token>` once (or `/wallboard?token=<token>` for the React version) — the token persists to browser local storage/cookie, so subsequent visits to the bare URL keep working.
 
-- Deploy the Next.js app to a Node-capable platform. **Vercel** is the easiest path (first-party Next.js support, free tier, HTTPS by default, and an encrypted Environment Variables dashboard — set every value from `.env.example` there, never in code). Render, Fly.io, or a VPS running `next start` under `pm2`/`systemd` behind an nginx/Caddy reverse proxy with a Let's Encrypt certificate are equally valid alternatives if you want to avoid Vercel or need more control.
-- Deploy `index.html` to your existing static/shared host, under your own domain.
-- If the API host is a different domain than the static host, set `WALLBOARD_ALLOWED_ORIGIN` on the API host to the exact static-hosting origin(s) (e.g. `https://yourdomain.com`) so browsers will allow the cross-origin fetch. Without it, `/api/wallboard` only accepts same-origin requests (no CORS headers are added), which is the safe default and matches the original same-origin `/wallboard` route.
-- Set `WALLBOARD_ACCESS_TOKEN` on the API host to a long random value (`openssl rand -hex 32`) **before** publishing either piece. The token is opt-in by design (unset means the API responds to anyone), so this step is not optional once the API is reachable from the public internet — an unset token on a public deployment means your telemetry endpoint is open to anyone who finds the URL.
-- Visit `https://yourdomain.com/index.html?api=https://api.yourdomain.com/api/wallboard&token=<token>` once. `index.html` persists both the API URL and the token to browser local storage, so subsequent visits to the bare URL keep working without the query string.
+`WALLBOARD_ALLOWED_ORIGIN` (CORS allowlist) and pointing `index.html` at a different `?api=` origin are still supported for the less common case of also hosting a second static-only mirror elsewhere with no backend of its own, but are not needed for the standard single-Railway-deployment setup above.
 
-**Never** put GA/Apify/monitor credentials into `index.html`, query strings, or any file served to browsers — they belong only in the API host's environment variables. `index.html` is only ever supposed to receive the already-sanitized JSON payload the API produces.
+**Never** put GA/Apify/monitor credentials into `public/index.html`, query strings, or any file served to browsers — they belong only in Railway's environment variables. `index.html` is only ever supposed to receive the already-sanitized JSON payload the API produces. This was evaluated and explicitly rejected during this app's public-hosting design pass; see `AGENTS.md`.
 
 ## Apple TV Usage
 

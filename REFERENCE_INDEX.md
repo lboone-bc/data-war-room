@@ -5,11 +5,11 @@
 - Name: Data War Room
 - Purpose: Private emergency-monitoring-room style wallboard for the database administrators office TV.
 - Primary route: `/wallboard`
-- Static artifact: root `index.html` is a self-contained static wallboard for plain static web servers.
+- Static artifact: `public/index.html` is a self-contained static wallboard, served by Next.js at `/index.html` on whatever host runs this app (deployment target: Railway).
 - Display target: single 16:9 landscape screen through Apple TV signage/browser software.
 - Brand posture: no visible organization branding.
 - Header: visible title is "War Room"; `.header-stats` carries the old footer telemetry; `Rock Update!` countdown ends at `2026-07-27T00:00:00-04:00`.
-- Static security model: `index.html` contains no provider credentials. It defaults to fetching `wallboard.json` from the same folder and supports `?api=...` for another JSON URL. `wallboard.json` is ignored by git; `wallboard.example.json` is the checked-in data-shape reference. For cross-origin deployments (static host and API host on different domains), the API host must set `WALLBOARD_ALLOWED_ORIGIN` to the static host's origin(s) or the browser blocks the fetch; unset means same-origin only (no CORS headers added). Embedding raw provider credentials in `index.html` was explicitly evaluated and rejected during the 2026-07-09 public-hosting pass — see `AGENTS.md`.
+- Static security model: `public/index.html` contains no provider credentials. It defaults to fetching `/api/wallboard` same-origin (the standard single-Railway-deployment case) and supports `?api=...` to point at a different JSON source for less common hosting arrangements. `wallboard.json` is ignored by git; `wallboard.example.json` is the checked-in data-shape reference. For a cross-origin arrangement (a second static mirror on a different domain than the API), the API host would need `WALLBOARD_ALLOWED_ORIGIN` set to that domain or the browser blocks the fetch; unset means same-origin only (no CORS headers added). Embedding raw provider credentials in `index.html` was explicitly evaluated and rejected twice during the 2026-07-09 public-hosting design pass — see `AGENTS.md`.
 
 ## External Systems
 
@@ -48,17 +48,17 @@
   - Config: none; camera list is in `lib/trafficCameras.ts`.
   - Camera IDs/URLs: DriveNC `4210`, `5269`, `4208`, `4839`, `4224`, and `4221` at `https://www.drivenc.gov/map/Cctv/<id>`, plus IPCamLive snapshot feeds `ipcamlive-3bwa7esgv64g9mu5x` and `ipcamlive-1cvoiombj6sxjywzv`.
   - These are fetched as image snapshots, not iframe camera/map pages. The app proxies them through `/api/traffic-camera/[id]` for a 60-second cache, in-flight de-duplication, and last-good fallback; the client refreshes each tile every 60 seconds and shows a degraded overlay on image failure.
-  - The wallboard API payload only ever exposes an absolute proxy URL for each camera (`${request origin}/api/traffic-camera/<id>`, built in `app/api/wallboard/route.ts`), never the raw upstream DriveNC/IPCamLive URL — required so a static `index.html` hosted on a different domain than the API still routes through the cached proxy instead of calling vendor endpoints directly from the browser.
+  - The wallboard API payload only ever exposes an absolute proxy URL for each camera (`${request origin}/api/traffic-camera/<id>`, built in `app/api/wallboard/route.ts`), never the raw upstream DriveNC/IPCamLive URL — correct for the same-origin Railway deployment and also for the less common case of a static `index.html` mirror hosted on a different domain than the API.
   - Layout: the ops column now shows weather plus an unlabeled eight-tile `2 x 4` camera grid. Traffic Detail moved to the former Website Pulse area in the top-left row. Camera labels remain in payload/alt text but are not rendered over the images.
 
 ## Security And Access
 
 - Private display access is controlled by `WALLBOARD_ACCESS_TOKEN`. It is opt-in by design (unset means no auth gate) — publishing this app on the public internet requires setting it deliberately; there is no code-level enforcement.
-- Cross-origin access to `/api/wallboard` (needed when the static `index.html` is hosted on a different domain than the API) is controlled by `WALLBOARD_ALLOWED_ORIGIN` (`lib/config.ts`), a comma-separated origin allowlist. Unset means same-origin only.
+- Cross-origin access to `/api/wallboard` (only needed if a static mirror of `index.html` is ever hosted on a different domain than the API) is controlled by `WALLBOARD_ALLOWED_ORIGIN` (`lib/config.ts`), a comma-separated origin allowlist. Unset means same-origin only — the standard Railway single-deployment setup doesn't need it.
 - Open Apple TV signage to `/wallboard?token=...` on the production host.
 - Use dedicated least-privilege viewer credentials for any authenticated embed.
 - `.env.example` at repo root documents every config var with placeholder values only — copy it to `.env.local` for local dev, or mirror the names into the hosting platform's environment variable dashboard for production. Real secrets never belong in a committed file.
-- Public hosting is a two-host split: `index.html` on any static/shared host, the Next.js app (containing every provider secret) on a Node-capable host (Vercel recommended). See README's "Publishing on the Internet" section.
+- Public hosting target: Railway (railway.com), one deployment serving `public/index.html`, `/wallboard`, and `/api/*` together on one domain. `railway.json` and `package.json`'s `engines.node`/`.nvmrc` pin the build; secrets are set in Railway's Variables tab. See README's "Publishing on the Internet" section.
 
 ## Alerting
 
