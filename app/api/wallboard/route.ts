@@ -22,6 +22,21 @@ function hasAccess(request: NextRequest, expectedToken: string | null) {
   return headerToken === expectedToken || queryToken === expectedToken;
 }
 
+// request.nextUrl.origin reflects the app's own internal bind address
+// (e.g. http://0.0.0.0:8080) when running behind a reverse proxy like
+// Railway's edge, not the public hostname — confirmed 2026-07-09 against a
+// live Railway deployment, where it broke every traffic-camera proxy URL.
+// Standard reverse-proxy convention (Railway, most PaaS/CDN edges) is to set
+// x-forwarded-host/x-forwarded-proto to the original public request; prefer
+// those when present and fall back to nextUrl.origin for local dev/anything
+// not behind a proxy.
+function publicOrigin(request: NextRequest) {
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  if (!forwardedHost) return request.nextUrl.origin;
+  const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
+  return `${forwardedProto}://${forwardedHost}`;
+}
+
 // Only echoes Access-Control-Allow-Origin back for an explicitly allowed
 // origin (never "*", since the token can travel as a header) — lets a
 // cross-origin static index.html deployment call this route from the
@@ -139,7 +154,7 @@ export async function GET(request: NextRequest) {
       cameras: TRAFFIC_CAMERAS.map((camera) => ({
         id: camera.id,
         label: camera.label,
-        url: `${request.nextUrl.origin}/api/traffic-camera/${camera.id}`
+        url: `${publicOrigin(request)}/api/traffic-camera/${camera.id}`
       }))
     }
   };

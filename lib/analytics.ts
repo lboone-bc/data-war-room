@@ -343,6 +343,12 @@ async function fetchAnalyticsFromGa(config: ServerConfig): Promise<AnalyticsResu
     });
   } catch (error) {
     const rawMessage = error instanceof Error ? error.message : "Unknown GA error";
+    // Never sent to the client (the public payload only ever gets
+    // safeMessage below) — this is a server-side-only log line so the real
+    // cause (bad key, wrong property ID, missing Viewer permission, etc.) is
+    // actually visible somewhere, e.g. in Railway's log viewer, instead of
+    // being silently swallowed.
+    console.error("[wallboard] GA analytics fetch failed:", rawMessage);
     const safeMessage = isQuotaError(rawMessage)
       ? GA_QUOTA_MESSAGE
       : GA_UNAVAILABLE_MESSAGE;
