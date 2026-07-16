@@ -971,18 +971,62 @@ function SocialPostPopup({ notice }: { notice: SocialPostNotice | null }) {
 // convention. Video is muted by default (`mute=1`) since this is ambient
 // visual-only signage — matches the room's existing "no sound unless armed"
 // posture for anything that isn't an explicit alert tone.
+type SelectedLiveStream = {
+  videoId: string;
+  source: "primary" | "fallback";
+};
+
+function offeredLiveStream(payload: WallboardPayload["liveStream"]): SelectedLiveStream | null {
+  if (payload.live && payload.videoId) {
+    return { videoId: payload.videoId, source: "primary" };
+  }
+  if (payload.fallback?.videoId) {
+    return { videoId: payload.fallback.videoId, source: "fallback" };
+  }
+  return null;
+}
+
 function LiveStreamPanel({ payload }: { payload: WallboardPayload }) {
   const { liveStream } = payload;
+  const offeredVideoId = liveStream.live
+    ? liveStream.videoId
+    : liveStream.fallback?.videoId ?? null;
+  const offeredSource: SelectedLiveStream["source"] | null = liveStream.live && liveStream.videoId
+    ? "primary"
+    : liveStream.fallback?.videoId
+      ? "fallback"
+      : null;
+  const [selected, setSelected] = useState<SelectedLiveStream | null>(() =>
+    offeredLiveStream(liveStream)
+  );
+
+  useEffect(() => {
+    if (!liveStream.enabled) {
+      setSelected(null);
+      return;
+    }
+    // Do not unmount a playing YouTube iframe because one provider check
+    // temporarily returned offline/unavailable. Only a positively identified
+    // live video is allowed to change the mounted selection.
+    if (offeredVideoId && offeredSource) {
+      const offered = { videoId: offeredVideoId, source: offeredSource };
+      setSelected((current) =>
+        current?.videoId === offered.videoId && current.source === offered.source
+          ? current
+          : offered
+      );
+    }
+  }, [liveStream.enabled, offeredSource, offeredVideoId]);
 
   if (!liveStream.enabled) return null;
 
-  if (liveStream.live && liveStream.videoId) {
+  if (selected?.source === "primary") {
     return (
       <Panel title="Live Stream" icon={<Youtube size={18} />} className="livestream-panel">
         <div className="livestream-frame">
           <iframe
-            key={liveStream.videoId}
-            src={`https://www.youtube.com/embed/${liveStream.videoId}?autoplay=1&mute=1&playsinline=1&modestbranding=1&rel=0`}
+            key={selected.videoId}
+            src={`https://www.youtube.com/embed/${selected.videoId}?autoplay=1&mute=1&playsinline=1&modestbranding=1&rel=0`}
             title="Biltmore Church live stream"
             allow="autoplay; encrypted-media; picture-in-picture"
           />
@@ -998,13 +1042,13 @@ function LiveStreamPanel({ payload }: { payload: WallboardPayload }) {
   // Fox by default) so the panel isn't dark most of the week. Badge is
   // visually distinct (amber, explicit source name) so it never reads as
   // "Biltmore is live" — this is filler content, not the real thing.
-  if (liveStream.fallback) {
+  if (selected?.source === "fallback") {
     return (
       <Panel title="Live Stream" icon={<Youtube size={18} />} className="livestream-panel">
         <div className="livestream-frame">
           <iframe
-            key={liveStream.fallback.videoId}
-            src={`https://www.youtube.com/embed/${liveStream.fallback.videoId}?autoplay=1&mute=1&playsinline=1&modestbranding=1&rel=0`}
+            key={selected.videoId}
+            src={`https://www.youtube.com/embed/${selected.videoId}?autoplay=1&mute=1&playsinline=1&modestbranding=1&rel=0`}
             title="LiveNOW from Fox"
             allow="autoplay; encrypted-media; picture-in-picture"
           />

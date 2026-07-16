@@ -572,7 +572,8 @@
       cameraRetryAt: Date.now(),
       cameraSignature: "",
       cameraCleanups: [],
-      databaseCleanup: null
+      databaseCleanup: null,
+      liveStreamSelection: null
     };
 
     const params = new URLSearchParams(window.location.search);
@@ -816,11 +817,29 @@
 
     function renderLiveStream(payload) {
       const root = $("liveStream");
-      root.replaceChildren();
       const live = payload.liveStream;
       const fallback = live?.fallback;
       const videoId = live?.live ? live.videoId : fallback?.videoId;
+      const source = live?.live && live.videoId ? "primary" : fallback?.videoId ? "fallback" : null;
+
+      if (!live?.enabled) {
+        state.liveStreamSelection = null;
+      }
+
+      // The wallboard payload refreshes every 30 seconds. Replacing the iframe
+      // during each render restarts YouTube even when the selected video is
+      // unchanged. Keep a valid selection mounted across polls and across a
+      // temporary offline/failed provider response. A positively identified
+      // different live video (for example, the primary channel going live)
+      // is still allowed to replace it.
       if (videoId) {
+        const signature = `${source}:${videoId}`;
+        if (state.liveStreamSelection?.signature === signature && root.querySelector("iframe")) {
+          return;
+        }
+
+        state.liveStreamSelection = { signature, videoId, source };
+        root.replaceChildren();
         const iframe = create("iframe");
         iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&playsinline=1&modestbranding=1&rel=0`;
         iframe.title = live.live ? "Live stream" : "Fallback live stream";
@@ -829,6 +848,12 @@
         root.appendChild(create("span", `livestream-badge${fallback && !live.live ? " fallback" : ""}`, fallback && !live.live ? "live now - fox news" : "live"));
         return;
       }
+
+      if (live?.enabled && state.liveStreamSelection && root.querySelector("iframe")) {
+        return;
+      }
+
+      root.replaceChildren();
       const idle = create("div", "livestream-idle");
       idle.appendChild(create("strong", "", live?.enabled ? "Not currently live" : "Live stream not configured"));
       idle.appendChild(create("span", "", live?.channelUrl ? live.channelUrl.replace("https://www.", "") : "Configure in secure API service"));
