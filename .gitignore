@@ -1,6 +1,7 @@
 node_modules
 .npm-cache
 .next
+.wrangler
 out
 dist
 .env

@@ -10,6 +10,7 @@
     "dev:cloudflare": "wrangler dev",
     "dev:restart": "bash scripts/restart-dev.sh",
     "deploy:cloudflare": "wrangler deploy",
+    "test:cloudflare": "node scripts/test-cloudflare-analytics.mjs",
     "build": "next build",
     "start": "next start -H 0.0.0.0",
     "lint": "next lint",

@@ -1,4 +1,22 @@
 # Local values for `npm run dev:cloudflare`. Copy to `.dev.vars`; it is
-# ignored by git. Production values belong in Cloudflare Worker variables.
-WALLBOARD_API_ORIGIN=http://localhost:3000
+# ignored by git. Production values belong in Cloudflare Worker Settings >
+# Variables and Secrets. Do not configure WALLBOARD_API_ORIGIN: the Worker
+# implements /api/wallboard itself.
 WALLBOARD_ACCESS_TOKEN=change-me
+
+GA_PROPERTY_ID=123456789
+GA_CLIENT_EMAIL=service-account@example.iam.gserviceaccount.com
+GA_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+# Alternatively, omit the two credential lines above and use the full JSON:
+# GOOGLE_APPLICATION_CREDENTIALS_JSON={"type":"service_account",...}
+
+DRIVENC_API_KEY=drivenc_api_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+DATABASE_DASHBOARD_URL=https://dashboard.example.com/embed/token
+DATABASE_MONITORS_STATUS_URL=https://status.example.com/monitors.json
+YOUTUBE_LIVE_CHANNEL_HANDLE=@BiltmoreChurch
+YOUTUBE_FALLBACK_CHANNEL_HANDLE=@livenowfox
+
+# Optional and potentially billable. Leave unset for a truly $0 wallboard.
+# APIFY_TOKEN=apify_api_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# APIFY_INSTAGRAM_PROFILE_URL=https://www.instagram.com/biltmorechurch/
+# APIFY_FACEBOOK_PAGE_URL=https://www.facebook.com/mybiltmorechurch/

@@ -23,7 +23,7 @@ This kills whatever's on port 3000 (including a hung `next dev`), switches to th
 
 ## Static Wallboard
 
-[public/index.html](/Users/lboone/Documents/Data%20Monitoring%20Room/public/index.html) is a framework-free static wallboard (plain HTML/CSS/JS; no front-end build step). It lives in Next.js's `public/` folder for local/API-host use and is also the public asset served by the Cloudflare Worker configured in `wrangler.jsonc`. By default it fetches `/api/wallboard` same-origin; on Cloudflare, `cloudflare/worker.js` proxies that path to the secret-bearing Next.js API host, so the display still has one public origin and needs no browser CORS setup.
+[public/index.html](/Users/lboone/Documents/Data%20Monitoring%20Room/public/index.html) is a framework-free static wallboard (plain HTML/CSS/JS; no front-end build step). It lives in Next.js's `public/` folder for local use and is the public asset served by the Cloudflare Worker configured in `wrangler.jsonc`. By default it fetches `/api/wallboard` same-origin; in production, `cloudflare/worker.js` implements that secret-bearing API directly, so no second host, Railway service, or browser CORS setup is required.
 
 It can still be pointed at a different JSON source if needed (e.g. a second static-only mirror hosted elsewhere with no backend of its own):
 
@@ -71,39 +71,50 @@ APIFY_FACEBOOK_PAGE_URL=https://www.facebook.com/mybiltmorechurch/
 DRIVENC_API_KEY=drivenc_api_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-`GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`, or `GA_CLIENT_EMAIL` plus `GA_PRIVATE_KEY` can be used for Google Analytics credentials. Prefer a service account with Viewer access to only the needed GA4 property.
+`GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`, or `GA_CLIENT_EMAIL` plus `GA_PRIVATE_KEY` can be used by the local Next.js API. Cloudflare cannot read a local credential-file path, so production must use `GOOGLE_APPLICATION_CREDENTIALS_JSON` as an encrypted secret or `GA_CLIENT_EMAIL` plus an encrypted `GA_PRIVATE_KEY`. Prefer a service account with Viewer access to only the needed GA4 property.
 
 `.env.local`, `.env`, and `.env.*` are ignored by git. Keep real secrets in those ignored files or in the deployment platform's secret store; `.env.example` at repo root holds only placeholder names/values and is safe to commit.
 
-## Publishing on the Internet
+## Publishing on the Internet — Free Cloudflare Setup
 
-The public display now follows the same Git-connected Cloudflare Worker + static-assets model as `cctv-weather-wall`, while the existing Next.js service remains the private API backend. This split is deliberate: Cloudflare serves `public/index.html` and proxies `/api/*` same-origin; GA service-account credentials, Apify tokens, DriveNC keys, and monitor/dashboard configuration stay only on the Node backend.
+Production is one Git-connected Cloudflare Worker: [https://data-war-room.lboone.workers.dev/](https://data-war-room.lboone.workers.dev/). It serves the static display and performs the GA, NCDOT, NWS, YouTube, monitor, and optional Apify calls server-side. Railway is not required. Pushes to `main` in `lboone-bc/data-war-room` trigger the existing Cloudflare deployment.
 
-Production display: [https://data-war-room.lboone.workers.dev/](https://data-war-room.lboone.workers.dev/). The Cloudflare GitHub App is authorized for `lboone-bc/data-war-room`, and pushes to `main` trigger a verified Workers build/deploy. Until the Railway/Node backend is deployed and its URL is assigned to `WALLBOARD_API_ORIGIN`, the static shell is live but telemetry remains in its controlled setup state.
+Cloudflare's Workers Free plan currently allows 100,000 requests per day. A wallboard polling every 30 seconds uses about 2,880 requests per day, and the Worker's composed-response/provider caches prevent those polls from becoming equivalent upstream calls.
 
-### 1. Deploy the API backend
+### Where production variables go
 
-Railway remains a good backend target because it runs the complete Next.js server:
+Open **Cloudflare → Workers & Pages → data-war-room → Settings → Variables and Secrets → Add**, enter the names below, and press **Deploy**. Use **Secret** for anything marked secret; secret values are encrypted and hidden after saving.
 
-1. Connect this GitHub repo to a Railway project. `railway.json`, `package.json`'s `engines.node`, and `.nvmrc` keep the service on Node 20 and start it with `npm run start`.
-2. Add the values from [.env.example](/Users/lboone/Documents/Data%20Monitoring%20Room/.env.example) in Railway's Variables tab, including `DRIVENC_API_KEY` and a long random `WALLBOARD_ACCESS_TOKEN` (`openssl rand -hex 32`).
-3. Confirm `https://<api-host>/api/wallboard?token=<token>` returns sanitized JSON. The backend URL must be HTTPS before Cloudflare proxies it.
+| Name | Type | Required | Purpose |
+| --- | --- | --- | --- |
+| `WALLBOARD_ACCESS_TOKEN` | Secret | Strongly recommended | Protects the public JSON endpoint and display. Generate with `openssl rand -hex 32`. |
+| `GA_PROPERTY_ID` | Variable | For GA | Numeric GA4 property ID. |
+| `GA_CLIENT_EMAIL` | Variable | For GA | Service-account `client_email`. |
+| `GA_PRIVATE_KEY` | Secret | For GA | Full service-account private key, including BEGIN/END lines. Use this with `GA_CLIENT_EMAIL`. |
+| `GOOGLE_APPLICATION_CREDENTIALS_JSON` | Secret | Alternative GA method | Full service-account JSON; use instead of the two GA credential fields above. |
+| `DRIVENC_API_KEY` | Secret | For live NCDOT HLS | Same free DriveNC developer key used by `cctv-weather-wall`. |
+| `DATABASE_DASHBOARD_URL` | Secret | For database panel | Public/kiosk/share URL; keep it secret when it contains a token. |
+| `DATABASE_MONITORS_STATUS_URL` | Secret | Optional | JSON/text monitor status endpoint. |
+| `YOUTUBE_LIVE_CHANNEL_HANDLE` | Variable | Optional | Primary handle such as `@BiltmoreChurch`. |
+| `YOUTUBE_FALLBACK_CHANNEL_HANDLE` | Variable | Optional | Defaults to `@livenowfox`; set blank to disable. |
+| `WEBSITE_HEALTHCHECK_ENABLED` | Variable | Optional | `true` enables periodic synthetic HEAD checks; default is `false`. |
+| `WEBSITE_HEALTHCHECK_URL` | Variable | Optional | URL checked only when the setting above is true. |
+| `WEBSITE_HOSTNAME` | Variable | Optional | Display/reference hostname. Cloudflare Workers cannot expose peer-certificate expiry, so renewal alerting should remain in Site24x7. |
+| `APIFY_TOKEN` | Secret | Optional, not $0-guaranteed | Enables Instagram/Facebook. Leave unset for a truly no-cost wallboard. |
+| `APIFY_INSTAGRAM_PROFILE_URL` | Variable | With Apify | Instagram profile URL. |
+| `APIFY_FACEBOOK_PAGE_URL` | Variable | With Apify | Facebook page URL. |
 
-### 2. Connect the static display to Cloudflare Git deployment
+The remaining layout, threshold, and audio variables in [.env.example](/Users/lboone/Documents/Data%20Monitoring%20Room/.env.example) are optional; defaults already match the current display. Do not add `WALLBOARD_API_ORIGIN`—the Worker is now the API.
 
-1. Push this repo to GitHub (the configured remote is `lboone-bc/data-war-room`).
-2. In Cloudflare, choose **Workers & Pages → Create → Import a repository**, select this repo, and use `npx wrangler deploy` as the deploy command. `wrangler.jsonc` already points at `cloudflare/worker.js` and `./public`.
-3. Add `WALLBOARD_API_ORIGIN=https://<api-host>` as a normal Worker variable. Do not add a trailing `/api/wallboard`; the Worker forwards the original `/api/*` path.
-4. Add `WALLBOARD_ACCESS_TOKEN` as an encrypted Worker secret with the same value used by the backend. The Worker validates the browser's token, then sends it upstream without exposing provider credentials.
-5. Open `https://<worker>.workers.dev/?token=<token>` once. The static wallboard stores the token in local storage for the signage browser.
+After saving variables, open `https://data-war-room.lboone.workers.dev/?token=<WALLBOARD_ACCESS_TOKEN>` once in the signage browser. The display stores that access token locally for later refreshes. Provider keys and the GA private key never reach browser JavaScript.
 
-For local split-host testing, copy [.dev.vars.example](/Users/lboone/Documents/Data%20Monitoring%20Room/.dev.vars.example) to `.dev.vars`, run the Next API with `npm run dev`, then run `npm run dev:cloudflare` in a second terminal. Use `npm run deploy:cloudflare` for a manual Wrangler deploy.
+For local Worker testing, copy [.dev.vars.example](/Users/lboone/Documents/Data%20Monitoring%20Room/.dev.vars.example) to the ignored `.dev.vars`, fill the same names, and run `npm run dev:cloudflare`. A local `GOOGLE_APPLICATION_CREDENTIALS=/path/file.json` path only works with Next.js; the Worker uses JSON or email/private-key credentials even locally. Use `npm run deploy:cloudflare` only for a manual deployment; normal production deploys come from Git.
 
 Wrangler is pinned to the Node-20-compatible `~4.63.0` line. Newer Wrangler releases require Node 22; move that pin only during a coordinated Node 22 + Next.js/React migration.
 
-Cloudflare's dashboard Git integration has previously wiped encrypted secrets on deployment in the companion camera project. If `/api/wallboard` suddenly returns `401` after a deploy, first verify the Worker's `WALLBOARD_ACCESS_TOKEN`. If this repeats, switch deployment to GitHub Actions with `cloudflare/wrangler-action`; a direct `wrangler deploy` preserves Worker secrets more reliably.
+Cloudflare's dashboard Git integration previously wiped an encrypted secret in the companion camera project. If `/api/wallboard` suddenly returns `401` or returns setup states after a deploy, first verify **Settings → Variables and Secrets**. If it repeats, switch deployment to GitHub Actions with `cloudflare/wrangler-action`.
 
-`WALLBOARD_ALLOWED_ORIGIN` and `?api=https://...` remain supported for direct cross-origin/browser testing, but the normal Cloudflare Worker path is same-origin and does not need CORS. Never place GA, Apify, DriveNC, monitor, or dashboard credentials in `public/index.html`, query strings, or any browser-served file.
+`?api=https://...` remains supported for alternate JSON testing, but normal Cloudflare use is same-origin and needs no CORS. Never place GA, Apify, DriveNC, monitor, or dashboard credentials in `public/index.html`, query strings, or any browser-served file.
 
 ## Apple TV Usage
 
@@ -131,9 +142,9 @@ The token is stored in browser local storage and as a cookie so normal refreshes
 - `DATABASE_MONITORS_STATUS_URL` can point at JSON with `downCount`, `down_count`, `down`, or a `monitors` array with `status` values. If it is not configured, the All Monitors row stays blank/nominal. If it is configured, any down/critical/failed/offline monitor creates a critical alert.
 - Website health checks are passive by default and do not send synthetic requests to the public website. Set `WEBSITE_HEALTHCHECK_ENABLED=true` only if you want the wallboard API to send a periodic `HEAD` request to `WEBSITE_HEALTHCHECK_URL`.
 - Audible alerts cover critical website traffic anomalies, failed website health, critical SSL state, and database monitor down states. All of these except a database monitor outage share one alert tone, gated to the configured cooldown (180s by default). A database monitor reporting down (the Site24x7 "All Monitors" feed) is treated as the most serious case: it plays a distinctly different siren-style tone that repeats automatically every 12 seconds — no cooldown, no manual dismiss — until the monitor recovers. Both tones require the `arm audio` button to have been pressed this browser session before anything can play (browser autoplay policy).
-- A full-width ticker bar below the panel grid scrolls a passive operations feed: deduplicated real alerts, occasional Instagram/Facebook content, and heartbeat lines. Social posts are fetched server-side through the paid Apify actors and cached 15 minutes per platform. Any failed/empty/timeout run now backs off for one hour while retaining the last-good post, preventing the 30-second wallboard poll from repeatedly starting billed actors during an outage. A post only gets the prominent "New post" treatment when its timestamp is within the last 5 minutes; social notices remain non-audible.
+- A full-width ticker bar below the panel grid scrolls a passive operations feed: deduplicated real alerts, occasional Instagram/Facebook content, and heartbeat lines. Social posts use paid Apify actors only when `APIFY_TOKEN` is configured. Production caches each platform for one hour; the local Next.js API retains its 15-minute cache. Failures retain last-good content. Leave the token unset for heartbeat-only ticker content and no Apify expense.
 - A "Live Stream" panel shows the Biltmore Church YouTube channel (`YOUTUBE_LIVE_CHANNEL_HANDLE`) when it's actively broadcasting: a muted, autoplaying embed of the live video with a "LIVE" badge. No YouTube Data API key is required — live/offline detection scrapes the channel's `/live` page canonical link (`lib/youtubeLive.ts`), cached 45 seconds, following the same silent-fallback discipline as the other external calls. When the primary channel isn't live, the panel falls back to a second channel (`YOUTUBE_FALLBACK_CHANNEL_HANDLE`, defaults to LiveNOW from Fox) if that one is live, clearly badged in amber so it never reads as "Biltmore is live." If neither is live, the panel shows a quiet "Not currently live" state with the channel link instead of an empty/broken embed. If `YOUTUBE_LIVE_CHANNEL_HANDLE` isn't set, the panel doesn't render at all rather than showing a setup warning.
-- The right-side local-ops column shows Arden, NC weather above eight unlabeled **live NCDOT HLS streams**. `lib/trafficCameras.ts` calls the DriveNC Cameras API server-side with `DRIVENC_API_KEY`, filters the curated I-26/US-25 IDs, and caches public media metadata for 90 seconds with in-flight de-duplication, failed-attempt backoff, and last-good fallback. Safari uses native HLS; other browsers use `hls.js`. A tile that does not reach a real `playing` event within 18 seconds falls back to a scaled DriveNC viewer iframe, then retries after 90 seconds. The old 60-second JPEG proxy route and IPCamLive snapshots were removed. Labels stay in accessibility text only; green/red status dots and an amber priority frame provide operational state without covering the video.
+- The right-side local-ops column shows Arden, NC weather above eight unlabeled **live NCDOT HLS streams**. `lib/trafficCameras.ts` handles the local Next route and `cloudflare/providers.js` handles production; each calls DriveNC server-side with `DRIVENC_API_KEY`, filters the curated I-26/US-25 IDs, and caches public media metadata for 90 seconds with last-good fallback. Safari uses native HLS; other browsers use `hls.js`. A tile that does not reach a real `playing` event within 18 seconds falls back to a scaled DriveNC viewer iframe. Labels stay in accessibility text only.
 - The Active Database System panel intentionally has no refresh/last-updated toolbar; the iframe refresh still runs on `DATABASE_REFRESH_SECONDS`.
 
 ## Scripts
