@@ -341,8 +341,8 @@
       background-size: 28px 28px;
     }
 
-    .frame-stage { width: 100%; height: 100%; overflow: hidden; border: 1px solid rgba(111, 231, 255, 0.22); background: #07111a; }
-    .frame-stage iframe { width: 100%; height: 100%; border: 0; background: #07111a; }
+    .frame-stage { flex: 0 0 auto; overflow: hidden; border: 1px solid rgba(111, 231, 255, 0.22); background: #07111a; }
+    .frame-stage iframe { display: block; border: 0; background: #07111a; transform-origin: top left; }
     .frame-stage iframe.darken { filter: invert(1) hue-rotate(180deg) saturate(0.86) brightness(0.78) contrast(0.96); }
     .frame-empty { flex-direction: column; gap: 10px; color: var(--muted); text-align: center; }
     .frame-empty strong { color: var(--text); }
@@ -548,7 +548,8 @@
       lastToneAt: 0,
       cameraRetryAt: Date.now(),
       cameraSignature: "",
-      cameraCleanups: []
+      cameraCleanups: [],
+      databaseCleanup: null
     };
 
     const params = new URLSearchParams(window.location.search);
@@ -592,6 +593,9 @@
         config: {
           databaseDashboardUrl: null,
           databaseRefreshSeconds: 60,
+          databaseFrameViewportWidth: 1024,
+          databaseFrameViewportHeight: 640,
+          databaseFrameCropBottom: 96,
           databaseFrameDarkMode: true,
           audioEnabled: true,
           audioCooldownSeconds: 180
@@ -721,6 +725,8 @@
 
     function renderDatabase(payload) {
       const shell = $("databaseFrame");
+      state.databaseCleanup?.();
+      state.databaseCleanup = null;
       shell.replaceChildren();
       if (!payload.config.databaseDashboardUrl) {
         const empty = create("div", "frame-empty");
@@ -735,8 +741,46 @@
       iframe.title = "Active database dashboard";
       iframe.referrerPolicy = "no-referrer";
       if (payload.config.databaseFrameDarkMode) iframe.className = "darken";
+
+      // Render the vendor dashboard at a fixed desktop viewport, then scale
+      // that full desktop page into this narrower panel. Letting the iframe
+      // inherit the panel width makes responsive dashboards switch to mobile.
+      const viewportWidth = Math.max(
+        320,
+        Number(payload.config.databaseFrameViewportWidth) || 1024
+      );
+      const viewportHeight = Math.max(
+        240,
+        Number(payload.config.databaseFrameViewportHeight) || 640
+      );
+      const cropBottom = Math.min(
+        viewportHeight - 1,
+        Math.max(0, Number(payload.config.databaseFrameCropBottom) || 0)
+      );
+      const visibleHeight = viewportHeight - cropBottom;
+      iframe.style.width = `${viewportWidth}px`;
+      iframe.style.height = `${viewportHeight}px`;
+
       stage.appendChild(iframe);
       shell.appendChild(stage);
+
+      const updateScale = () => {
+        const rect = shell.getBoundingClientRect();
+        const scale = Math.min(1, rect.width / viewportWidth, rect.height / visibleHeight);
+        const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+        stage.style.width = `${viewportWidth * safeScale}px`;
+        stage.style.height = `${visibleHeight * safeScale}px`;
+        iframe.style.transform = `scale(${safeScale})`;
+      };
+
+      updateScale();
+      const observer = new ResizeObserver(updateScale);
+      observer.observe(shell);
+      window.addEventListener("resize", updateScale);
+      state.databaseCleanup = () => {
+        observer.disconnect();
+        window.removeEventListener("resize", updateScale);
+      };
     }
 
     function renderLiveStream(payload) {

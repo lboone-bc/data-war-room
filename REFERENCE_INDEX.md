@@ -34,6 +34,7 @@
   - The panel does not render refresh/last-updated toolbar text; that space belongs to the iframe.
   - Zoom/viewport config: `DATABASE_FRAME_VIEWPORT_WIDTH`, `DATABASE_FRAME_VIEWPORT_HEIGHT`; default is `1024x640`.
   - Visual controls: `DATABASE_FRAME_DARK_MODE` applies an iframe filter and `DATABASE_FRAME_CROP_BOTTOM` crops unused lower space.
+  - Both `app/wallboard/page.tsx` and `public/index.html` render that fixed desktop-sized iframe and scale it into the panel. The static page must not inherit the panel's narrow width, which triggers the embedded dashboard's mobile breakpoint.
   - Dark theme must be enabled in the Site24x7 public dashboard share settings when available.
 - Database monitor status endpoint
   - Config: `DATABASE_MONITORS_STATUS_URL`
