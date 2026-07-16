@@ -114,6 +114,8 @@ Wrangler is pinned to the Node-20-compatible `~4.63.0` line. Newer Wrangler rele
 
 Cloudflare's Git build configuration must use `npm run deploy:cloudflare` as its production deploy command (and `npm exec -- wrangler versions upload` for non-production branches). Do not replace it with bare `npx wrangler deploy`: the latest auto-configuring Wrangler may mistake the repo's local Next.js surface for the production target, invoke OpenNext, and reject Next.js 14 before it reaches the actual static-assets Worker configuration.
 
+`wrangler.jsonc` intentionally sets `keep_vars: true`. Cloudflare documents that Wrangler otherwise overrides dashboard-managed variables on deployment; removing this flag can erase `GA_PROPERTY_ID` and encrypted provider secrets during the next Git build.
+
 Cloudflare's dashboard Git integration previously wiped an encrypted secret in the companion camera project. If `/api/wallboard` suddenly returns `401` or returns setup states after a deploy, first verify **Settings → Variables and Secrets**. If it repeats, switch deployment to GitHub Actions with `cloudflare/wrangler-action`.
 
 `?api=https://...` remains supported for alternate JSON testing, but normal Cloudflare use is same-origin and needs no CORS. Never place GA, Apify, DriveNC, monitor, or dashboard credentials in `public/index.html`, query strings, or any browser-served file.

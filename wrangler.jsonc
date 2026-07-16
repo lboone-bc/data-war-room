@@ -1,6 +1,7 @@
 {
   "name": "data-war-room",
   "compatibility_date": "2026-07-16",
+  "keep_vars": true,
   "main": "cloudflare/worker.js",
   "assets": {
     "directory": "./public",

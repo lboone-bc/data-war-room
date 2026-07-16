@@ -60,7 +60,7 @@
 - Use dedicated least-privilege viewer credentials for any authenticated embed.
 - `.env.example` documents local/full configuration; `.dev.vars.example` documents the Cloudflare-local subset. Real values go in ignored `.env.local` / `.dev.vars` files or Cloudflare **Workers & Pages → data-war-room → Settings → Variables and Secrets**.
 - Public hosting target: one Git-connected Cloudflare Worker with static assets and a native API. Sensitive production values must use the Secret type. Verify them after Git deploys because Cloudflare's dashboard integration previously wiped a secret in the companion project.
-- Cloudflare production deploy command: `npm run deploy:cloudflare` so the repository-pinned Wrangler consumes `wrangler.jsonc`. The bare `npx wrangler deploy` command was removed from dashboard build settings after Cloudflare's latest auto-config tried `opennextjs-cloudflare` and rejected the unrelated Next.js 14 local surface. Non-production version uploads use `npm exec -- wrangler versions upload`.
+- Cloudflare production deploy command: `npm run deploy:cloudflare` so the repository-pinned Wrangler consumes `wrangler.jsonc`. The bare `npx wrangler deploy` command was removed from dashboard build settings after Cloudflare's latest auto-config tried `opennextjs-cloudflare` and rejected the unrelated Next.js 14 local surface. Non-production version uploads use `npm exec -- wrangler versions upload`. `wrangler.jsonc` must retain `keep_vars: true`; a deploy without it directly reproduced deletion of the dashboard-managed GA variable and credential secret.
 
 ## Alerting
 
