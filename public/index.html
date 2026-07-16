@@ -289,19 +289,42 @@
       position: relative;
       min-height: 0;
       margin: 12px 12px 8px;
+      overflow: hidden;
       border: 1px solid rgba(111, 231, 255, 0.17);
       background:
         linear-gradient(rgba(111, 231, 255, 0.08) 1px, transparent 1px),
         linear-gradient(90deg, rgba(111, 231, 255, 0.08) 1px, transparent 1px),
-        radial-gradient(ellipse at 28% 42%, rgba(109, 255, 179, 0.18), transparent 14%),
-        radial-gradient(ellipse at 53% 38%, rgba(79, 235, 255, 0.16), transparent 18%),
-        radial-gradient(ellipse at 75% 49%, rgba(109, 255, 179, 0.14), transparent 20%),
         rgba(2, 8, 13, 0.64);
-      background-size: 28px 28px, 28px 28px, auto, auto, auto, auto;
+      background-size: 28px 28px, 28px 28px, auto;
+    }
+
+    .world-map-image {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .map-empty {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-shadow: 0 1px 12px rgba(0, 0, 0, 0.95);
     }
 
     .map-point {
       position: absolute;
+      z-index: 2;
       width: 12px;
       height: 12px;
       margin: -6px 0 0 -6px;
@@ -699,9 +722,14 @@
     function renderGeo(payload) {
       const map = $("worldMap");
       map.replaceChildren();
+      const world = create("img", "world-map-image");
+      world.src = "/world-map.svg";
+      world.alt = "";
+      world.setAttribute("aria-hidden", "true");
+      map.appendChild(world);
       const points = payload.analytics.geo || [];
       if (!points.length) {
-        map.appendChild(create("div", "blank-state", "No mapped realtime countries"));
+        map.appendChild(create("div", "map-empty", "No mapped realtime countries"));
       } else {
         points.forEach((point) => {
           const dot = create("span", "map-point");
