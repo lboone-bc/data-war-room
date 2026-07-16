@@ -7,7 +7,9 @@
   },
   "scripts": {
     "dev": "next dev",
+    "dev:cloudflare": "wrangler dev",
     "dev:restart": "bash scripts/restart-dev.sh",
+    "deploy:cloudflare": "wrangler deploy",
     "build": "next build",
     "start": "next start -H 0.0.0.0",
     "lint": "next lint",
@@ -16,6 +18,7 @@
   "dependencies": {
     "@google-analytics/data": "^5.2.0",
     "d3-geo": "^3.1.1",
+    "hls.js": "^1.6.16",
     "lucide-react": "^0.468.0",
     "next": "^14.2.23",
     "react": "^18.3.1",
@@ -31,6 +34,7 @@
     "@types/topojson-client": "^3.1.5",
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.2.23",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "wrangler": "~4.63.0"
   }
 }

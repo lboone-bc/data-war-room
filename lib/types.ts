@@ -82,7 +82,10 @@ export type LocalWeatherState = {
 export type TrafficCamera = {
   id: string;
   label: string;
-  url: string;
+  videoUrl: string | null;
+  viewerUrl: string;
+  status: string;
+  priority: boolean;
 };
 
 export type WallboardPayload = {

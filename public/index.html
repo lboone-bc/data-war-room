@@ -5,18 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>Data War Room</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800;900&family=Overpass+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #03080d;
-      --panel: rgba(7, 19, 28, 0.88);
-      --line: rgba(111, 231, 255, 0.24);
-      --line-strong: rgba(111, 231, 255, 0.48);
-      --text: #e7fbff;
-      --muted: #82a7b4;
-      --cyan: #4febff;
-      --green: #6dffb3;
-      --amber: #ffd166;
-      --red: #ff4d6d;
+      --bg: #090c10;
+      --panel: rgba(15, 20, 27, 0.92);
+      --line: rgba(63, 194, 255, 0.2);
+      --line-strong: rgba(63, 194, 255, 0.46);
+      --text: #e9eef3;
+      --muted: #aebccb;
+      --cyan: #3fc2ff;
+      --green: #3ce685;
+      --amber: #ffb020;
+      --red: #ff4d4f;
+      --font-display: "Overpass", ui-sans-serif, system-ui, sans-serif;
+      --font-mono: "Overpass Mono", ui-monospace, monospace;
     }
 
     * { box-sizing: border-box; }
@@ -24,7 +29,7 @@
     body {
       background: var(--bg);
       color: var(--text);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: var(--font-display);
     }
 
     .wallboard {
@@ -37,7 +42,7 @@
         linear-gradient(90deg, rgba(79, 235, 255, 0.035) 1px, transparent 1px),
         radial-gradient(circle at 18% 12%, rgba(79, 235, 255, 0.18), transparent 24%),
         radial-gradient(circle at 84% 18%, rgba(109, 255, 179, 0.12), transparent 28%),
-        linear-gradient(135deg, #03080d, #071620 52%, #020406);
+        linear-gradient(135deg, #090c10, #0d151d 52%, #05070a);
       background-size: 44px 44px, 44px 44px, auto, auto, auto;
     }
 
@@ -46,16 +51,22 @@
       position: fixed;
       inset: 0;
       z-index: 5;
-      background: repeating-linear-gradient(0deg, rgba(255,255,255,0.025), rgba(255,255,255,0.025) 1px, transparent 1px, transparent 4px);
-      mix-blend-mode: screen;
-      opacity: 0.24;
+      background:
+        repeating-linear-gradient(0deg, rgba(255,255,255,0.025), rgba(255,255,255,0.025) 1px, transparent 1px, transparent 4px),
+        radial-gradient(ellipse at center, transparent 56%, rgba(0,0,0,0.52) 100%);
+      mix-blend-mode: overlay;
+      opacity: 0.32;
     }
+
+    .wallboard::after { content: ""; position: fixed; inset: 0; z-index: 20; pointer-events: none; background: var(--cyan); animation: boot-flash 700ms ease-out forwards; }
+    @keyframes boot-flash { from { opacity: 0.18; } to { opacity: 0; visibility: hidden; } }
 
     .command-header,
     .incident,
     .panel { position: relative; z-index: 1; }
 
     .command-header {
+      position: relative;
       height: 70px;
       display: flex;
       align-items: center;
@@ -64,9 +75,12 @@
       border-bottom: 1px solid var(--line);
     }
 
+    .command-header::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: linear-gradient(90deg, var(--amber) 0 18%, var(--line-strong) 40% 100%); }
+
     .eyebrow {
       margin: 0;
-      color: var(--cyan);
+      color: var(--muted);
+      font-family: var(--font-mono);
       text-transform: uppercase;
       font-size: 11px;
       font-weight: 900;
@@ -78,6 +92,7 @@
       font-size: clamp(25px, 2.4vw, 42px);
       line-height: 1;
       letter-spacing: 0;
+      text-transform: uppercase;
     }
 
     .header-cluster,
@@ -113,6 +128,7 @@
       letter-spacing: 0.1em;
       text-transform: uppercase;
       white-space: nowrap;
+      font-family: var(--font-mono);
     }
 
     .header-stats span { overflow: hidden; text-overflow: ellipsis; }
@@ -126,11 +142,12 @@
       gap: 1px;
       color: var(--amber);
       text-transform: uppercase;
+      font-family: var(--font-mono);
     }
 
     .countdown span { font-size: 9px; font-weight: 900; letter-spacing: 0.12em; }
     .countdown strong { color: var(--text); font-size: 16px; line-height: 1; font-variant-numeric: tabular-nums; }
-    .clock { padding: 0 13px; min-width: 148px; justify-content: center; font-variant-numeric: tabular-nums; }
+    .clock { padding: 0 13px; min-width: 148px; justify-content: center; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
     .icon-button, .audio-button { cursor: pointer; }
     .icon-button { width: 40px; justify-content: center; }
     .audio-button { padding: 0 12px; text-transform: uppercase; color: var(--cyan); font-size: 11px; font-weight: 900; letter-spacing: 0.1em; }
@@ -180,6 +197,8 @@
       opacity: 0.65;
     }
 
+    .panel::after { content: ""; position: absolute; inset: 5px; z-index: 3; pointer-events: none; background: linear-gradient(var(--cyan),var(--cyan)) left top/12px 1px no-repeat, linear-gradient(var(--cyan),var(--cyan)) left top/1px 12px no-repeat, linear-gradient(var(--cyan),var(--cyan)) right top/12px 1px no-repeat, linear-gradient(var(--cyan),var(--cyan)) right top/1px 12px no-repeat, linear-gradient(var(--cyan),var(--cyan)) left bottom/12px 1px no-repeat, linear-gradient(var(--cyan),var(--cyan)) left bottom/1px 12px no-repeat, linear-gradient(var(--cyan),var(--cyan)) right bottom/12px 1px no-repeat, linear-gradient(var(--cyan),var(--cyan)) right bottom/1px 12px no-repeat; opacity: 0.42; }
+
     .panel-header {
       height: 38px;
       display: flex;
@@ -195,6 +214,7 @@
       font-size: 12px;
       text-transform: uppercase;
       letter-spacing: 0.11em;
+      font-family: var(--font-mono);
     }
 
     .hero-panel { grid-column: 1 / 2; grid-row: 1; display: grid; grid-template-rows: 38px minmax(0, 1fr); }
@@ -353,10 +373,19 @@
     .forecast-card em { -webkit-line-clamp: 1; font-size: 10px; }
 
     .camera-grid { min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 10px 10px 6px; }
-    .camera-tile { position: relative; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgba(111, 231, 255, 0.18); background: rgba(2, 8, 13, 0.64); }
-    .camera-tile img { width: 100%; height: 100%; display: block; object-fit: cover; }
-    .camera-failed { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 6px; background: rgba(2, 8, 13, 0.82); color: var(--amber); font-size: 10px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; }
+    .camera-tile { position: relative; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgba(63,194,255,0.22); background: rgba(2,8,13,0.64); opacity: 0; animation: camera-boot 480ms ease forwards; animation-delay: calc(var(--tile-index, 0) * 45ms); }
+    .camera-tile.priority { border-color: rgba(255,176,32,0.58); box-shadow: inset 0 0 22px rgba(255,176,32,0.08); }
+    .camera-tile video { width: 100%; height: 100%; display: block; object-fit: cover; border: 0; background: #050709; }
+    .camera-fallback-frame { position: absolute; inset: 0; overflow: hidden; }
+    .camera-fallback-frame iframe { position: absolute; left: 0; top: 0; width: 1600px; height: 1000px; border: 0; transform-origin: top left; background: #050709; }
+    .camera-status-dot { position: absolute; z-index: 4; top: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 8px currentColor; }
+    .camera-tile.live .camera-status-dot { background: var(--green); animation: camera-dot 2.2s ease-in-out infinite; }
+    .camera-tile.fallback .camera-status-dot { background: var(--red); animation: camera-dot 900ms ease-in-out infinite; }
+    .camera-failed { position: absolute; inset: auto 0 0; min-height: 25px; display: flex; align-items: center; justify-content: center; background: linear-gradient(to top, rgba(4,6,8,0.94), rgba(4,6,8,0.7)); color: var(--amber); font-family: var(--font-mono); font-size: 8px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; }
     .camera-refresh { display: flex; align-items: center; justify-content: flex-end; padding: 0 10px 8px; }
+
+    @keyframes camera-boot { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+    @keyframes camera-dot { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.38; transform: scale(0.8); } }
 
     .ticker-bar { margin-top: 14px; height: 44px; position: relative; z-index: 1; }
     .system-log { width: 100%; height: 100%; padding: 0 14px; overflow: hidden; display: flex; align-items: center; border: 1px solid rgba(111, 231, 255, 0.16); background: rgba(2, 8, 13, 0.58); font-family: ui-monospace, "SF Mono", Menlo, monospace; }
@@ -484,6 +513,7 @@
     </div>
   </main>
 
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
   <script>
     "use strict";
 
@@ -512,15 +542,16 @@
       audioContext: null,
       audioUnlocked: false,
       lastToneAt: 0,
-      cameraRefreshAt: Date.now()
+      cameraRetryAt: Date.now(),
+      cameraSignature: "",
+      cameraCleanups: []
     };
 
     const params = new URLSearchParams(window.location.search);
-    // Defaults to the same-origin Next.js API route, since this file is now
-    // deployed alongside it (see public/ in the Next.js app, served on
-    // Railway). Still overridable with ?api=<url> for any other hosting
-    // arrangement (e.g. a plain wallboard.json file on separate static
-    // hosting with no backend at all).
+    // Defaults to the same-origin API path. Next.js serves it directly in
+    // local/backend mode; the Cloudflare Worker proxies it to the configured
+    // secret-bearing API origin in production. Still overridable with
+    // ?api=<url> for diagnostics or a sanitized static JSON mirror.
     const configuredApi = params.get("api") || window.localStorage.getItem("wallboard_api_url") || "/api/wallboard";
     const configuredToken = params.get("token") || window.localStorage.getItem("wallboard_token") || "";
     if (params.get("api")) window.localStorage.setItem("wallboard_api_url", configuredApi);
@@ -586,7 +617,7 @@
           current: { temperatureF: null, condition: null, humidity: null, windMph: null, windDirection: null, observedAt: null, station: null },
           forecast: []
         },
-        trafficCameras: { refreshSeconds: 60, cameras: [] }
+        trafficCameras: { refreshSeconds: 90, cameras: [] }
       };
     }
 
@@ -758,31 +789,106 @@
       });
     }
 
-    function cameraSrc(camera) {
-      const base = camera.url || `/api/traffic-camera/${encodeURIComponent(camera.id)}`;
-      const join = base.includes("?") ? "&" : "?";
-      return `${base}${join}refresh=${state.cameraRefreshAt}`;
+    const HLS_CONNECT_TIMEOUT_MS = 18000;
+    const CAMERA_IFRAME_WIDTH = 1600;
+    const CAMERA_IFRAME_HEIGHT = 1000;
+
+    function renderCameraFallback(tile, camera) {
+      tile.classList.remove("live", "connecting");
+      tile.classList.add("fallback");
+      const frame = create("div", "camera-fallback-frame");
+      const iframe = create("iframe");
+      iframe.src = camera.viewerUrl || `https://www.drivenc.gov/map/Cctv/${encodeURIComponent(camera.id)}`;
+      iframe.title = camera.label || camera.id;
+      iframe.loading = "lazy";
+      iframe.referrerPolicy = "strict-origin-when-cross-origin";
+      frame.appendChild(iframe);
+      tile.replaceChildren(create("span", "camera-status-dot"), frame, create("div", "camera-failed", "viewer fallback"));
+
+      const scale = () => {
+        const rect = frame.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        iframe.style.transform = `scale(${Math.max(rect.width / CAMERA_IFRAME_WIDTH, rect.height / CAMERA_IFRAME_HEIGHT)})`;
+      };
+      scale();
+      const observer = new ResizeObserver(scale);
+      observer.observe(frame);
+      state.cameraCleanups.push(() => observer.disconnect());
     }
 
-    function renderCameras(payload) {
+    function renderCameraStream(tile, camera) {
+      const video = create("video");
+      video.autoplay = true;
+      video.muted = true;
+      video.playsInline = true;
+      video.setAttribute("aria-label", camera.label || camera.id);
+      tile.replaceChildren(create("span", "camera-status-dot"), video);
+      tile.classList.add("connecting");
+
+      let hls = null;
+      let settled = false;
+      const markLive = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(watchdog);
+        tile.classList.remove("connecting", "fallback");
+        tile.classList.add("live");
+      };
+      const markFailed = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(watchdog);
+        hls?.destroy();
+        renderCameraFallback(tile, camera);
+      };
+      const watchdog = setTimeout(markFailed, HLS_CONNECT_TIMEOUT_MS);
+      video.addEventListener("playing", markLive);
+      video.addEventListener("error", markFailed, { once: true });
+
+      if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = camera.videoUrl;
+        video.play().catch(() => {});
+      } else if (window.Hls && window.Hls.isSupported()) {
+        hls = new window.Hls({ liveSyncDurationCount: 3 });
+        hls.loadSource(camera.videoUrl);
+        hls.attachMedia(video);
+        hls.on(window.Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+        hls.on(window.Hls.Events.ERROR, (_event, data) => {
+          if (data.fatal) markFailed();
+        });
+      } else {
+        markFailed();
+      }
+
+      state.cameraCleanups.push(() => {
+        settled = true;
+        clearTimeout(watchdog);
+        hls?.destroy();
+        video.pause();
+        video.removeAttribute("src");
+      });
+    }
+
+    function renderCameras(payload, force = false) {
       const grid = $("cameraGrid");
-      grid.replaceChildren();
       const cameras = payload.trafficCameras?.cameras || [];
+      const signature = JSON.stringify(cameras.map((camera) => [camera.id, camera.videoUrl, camera.viewerUrl]));
+      if (!force && signature === state.cameraSignature) return;
+      state.cameraSignature = signature;
+      state.cameraCleanups.splice(0).forEach((cleanup) => cleanup());
+      grid.replaceChildren();
       if (!cameras.length) {
         grid.appendChild(create("div", "blank-state", "No camera feeds"));
       }
-      cameras.forEach((camera) => {
-        const tile = create("div", "camera-tile");
-        const img = create("img");
-        img.src = cameraSrc(camera);
-        img.alt = camera.label || camera.id;
-        img.onerror = () => {
-          if (!tile.querySelector(".camera-failed")) tile.appendChild(create("div", "camera-failed", "feed unavailable"));
-        };
-        tile.appendChild(img);
+      cameras.forEach((camera, index) => {
+        const tile = create("div", `camera-tile${camera.priority ? " priority" : ""}`);
+        tile.style.setProperty("--tile-index", index);
+        tile.setAttribute("aria-label", camera.label || camera.id);
+        if (camera.videoUrl) renderCameraStream(tile, camera);
+        else renderCameraFallback(tile, camera);
         grid.appendChild(tile);
       });
-      text("cameraRefresh", `refresh ${payload.trafficCameras?.refreshSeconds || 60}s - updated ${timeLabel(new Date(state.cameraRefreshAt).toISOString())}`);
+      text("cameraRefresh", `live HLS - metadata ${payload.trafficCameras?.refreshSeconds || 90}s - checked ${timeLabel(new Date(state.cameraRetryAt).toISOString())}`);
     }
 
     function socialPostExcerpt(post) {
@@ -907,10 +1013,10 @@
     window.setInterval(() => {
       const payload = state.payload || defaultPayload();
       renderHeader(payload);
-      const refreshSeconds = payload.trafficCameras?.refreshSeconds || 60;
-      if (Date.now() - state.cameraRefreshAt >= refreshSeconds * 1000) {
-        state.cameraRefreshAt = Date.now();
-        renderCameras(payload);
+      const refreshSeconds = payload.trafficCameras?.refreshSeconds || 90;
+      if (Date.now() - state.cameraRetryAt >= refreshSeconds * 1000) {
+        state.cameraRetryAt = Date.now();
+        renderCameras(payload, true);
       }
     }, 1000);
 

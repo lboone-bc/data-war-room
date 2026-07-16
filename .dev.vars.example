@@ -1,0 +1,4 @@
+# Local values for `npm run dev:cloudflare`. Copy to `.dev.vars`; it is
+# ignored by git. Production values belong in Cloudflare Worker variables.
+WALLBOARD_API_ORIGIN=http://localhost:3000
+WALLBOARD_ACCESS_TOKEN=change-me

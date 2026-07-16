@@ -1,16 +1,20 @@
+@import url("https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800;900&family=Overpass+Mono:wght@400;500;600;700&display=swap");
+
 :root {
-  --bg: #03080d;
-  --panel: rgba(7, 19, 28, 0.86);
-  --panel-strong: rgba(8, 28, 38, 0.94);
-  --line: rgba(111, 231, 255, 0.23);
-  --line-strong: rgba(111, 231, 255, 0.46);
-  --text: #e7fbff;
-  --muted: #82a7b4;
-  --cyan: #4febff;
-  --green: #6dffb3;
-  --amber: #ffd166;
-  --red: #ff4d6d;
+  --bg: #090c10;
+  --panel: rgba(15, 20, 27, 0.92);
+  --panel-strong: rgba(20, 27, 36, 0.96);
+  --line: rgba(63, 194, 255, 0.2);
+  --line-strong: rgba(63, 194, 255, 0.46);
+  --text: #e9eef3;
+  --muted: #aebccb;
+  --cyan: #3fc2ff;
+  --green: #3ce685;
+  --amber: #ffb020;
+  --red: #ff4d4f;
   --shadow: rgba(0, 0, 0, 0.55);
+  --font-display: "Overpass", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Overpass Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
 }
 
 * {
@@ -25,9 +29,7 @@ body {
   background: var(--bg);
   color: var(--text);
   overflow: hidden;
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+  font-family: var(--font-display);
 }
 
 button,
@@ -84,7 +86,7 @@ a {
     linear-gradient(90deg, rgba(79, 235, 255, 0.035) 1px, transparent 1px),
     radial-gradient(circle at 18% 12%, rgba(79, 235, 255, 0.18), transparent 24%),
     radial-gradient(circle at 84% 18%, rgba(109, 255, 179, 0.12), transparent 28%),
-    linear-gradient(135deg, #03080d, #071620 52%, #020406);
+    linear-gradient(135deg, #090c10, #0d151d 52%, #05070a);
   background-size: 44px 44px, 44px 44px, auto, auto, auto;
 }
 
@@ -100,9 +102,25 @@ a {
       rgba(255, 255, 255, 0.025) 1px,
       transparent 1px,
       transparent 4px
-    );
-  mix-blend-mode: screen;
-  opacity: 0.24;
+    ),
+    radial-gradient(ellipse at center, transparent 56%, rgba(0, 0, 0, 0.52) 100%);
+  mix-blend-mode: overlay;
+  opacity: 0.32;
+}
+
+.wallboard::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  background: var(--cyan);
+  animation: wallboard-boot-flash 700ms ease-out forwards;
+}
+
+@keyframes wallboard-boot-flash {
+  from { opacity: 0.18; }
+  to { opacity: 0; visibility: hidden; }
 }
 
 .command-header,
@@ -121,9 +139,20 @@ a {
   border-bottom: 1px solid var(--line);
 }
 
+.command-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--amber) 0 18%, var(--line-strong) 40% 100%);
+}
+
 .eyebrow {
   margin: 0;
-  color: var(--cyan);
+  color: var(--muted);
+  font-family: var(--font-mono);
   text-transform: uppercase;
   font-size: 11px;
   font-weight: 900;
@@ -135,6 +164,7 @@ a {
   font-size: clamp(25px, 2.4vw, 42px);
   line-height: 1;
   letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .header-cluster,
@@ -164,6 +194,7 @@ a {
   min-width: 148px;
   justify-content: center;
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
 }
 
 .header-stats {
@@ -177,6 +208,7 @@ a {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   white-space: nowrap;
+  font-family: var(--font-mono);
 }
 
 .header-stats span {
@@ -194,6 +226,7 @@ a {
   gap: 1px;
   color: var(--amber);
   text-transform: uppercase;
+  font-family: var(--font-mono);
 }
 
 .countdown span {
@@ -352,6 +385,24 @@ a {
   opacity: 0.65;
 }
 
+.panel::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  z-index: 3;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--cyan), var(--cyan)) left top / 12px 1px no-repeat,
+    linear-gradient(var(--cyan), var(--cyan)) left top / 1px 12px no-repeat,
+    linear-gradient(var(--cyan), var(--cyan)) right top / 12px 1px no-repeat,
+    linear-gradient(var(--cyan), var(--cyan)) right top / 1px 12px no-repeat,
+    linear-gradient(var(--cyan), var(--cyan)) left bottom / 12px 1px no-repeat,
+    linear-gradient(var(--cyan), var(--cyan)) left bottom / 1px 12px no-repeat,
+    linear-gradient(var(--cyan), var(--cyan)) right bottom / 12px 1px no-repeat,
+    linear-gradient(var(--cyan), var(--cyan)) right bottom / 1px 12px no-repeat;
+  opacity: 0.42;
+}
+
 .panel-header {
   height: 38px;
   display: flex;
@@ -367,6 +418,7 @@ a {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.11em;
+  font-family: var(--font-mono);
 }
 
 .hero-panel {
@@ -630,13 +682,79 @@ a {
     linear-gradient(90deg, rgba(111, 231, 255, 0.08) 1px, transparent 1px),
     rgba(2, 8, 13, 0.64);
   background-size: 22px 22px;
+  opacity: 0;
+  animation: camera-tile-boot 480ms ease forwards;
+  box-shadow: inset 0 0 20px rgba(63, 194, 255, 0.04);
 }
 
-.camera-tile img {
+.camera-tile:nth-child(2) { animation-delay: 45ms; }
+.camera-tile:nth-child(3) { animation-delay: 90ms; }
+.camera-tile:nth-child(4) { animation-delay: 135ms; }
+.camera-tile:nth-child(5) { animation-delay: 180ms; }
+.camera-tile:nth-child(6) { animation-delay: 225ms; }
+.camera-tile:nth-child(7) { animation-delay: 270ms; }
+.camera-tile:nth-child(8) { animation-delay: 315ms; }
+
+@keyframes camera-tile-boot {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.camera-tile.priority {
+  border-color: rgba(255, 176, 32, 0.58);
+  box-shadow: inset 0 0 22px rgba(255, 176, 32, 0.08);
+}
+
+.camera-tile video,
+.camera-tile iframe {
   width: 100%;
   height: 100%;
   display: block;
   object-fit: cover;
+  border: 0;
+  background: #050709;
+}
+
+.camera-fallback-frame {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.camera-fallback-frame iframe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1600px;
+  height: 1000px;
+  transform-origin: top left;
+}
+
+.camera-status-dot {
+  position: absolute;
+  z-index: 4;
+  top: 7px;
+  right: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 8px currentColor;
+}
+
+.camera-tile.live .camera-status-dot {
+  background: var(--green);
+  animation: camera-dot-pulse 2.2s ease-in-out infinite;
+}
+
+.camera-tile.fallback .camera-status-dot {
+  background: var(--red);
+  animation: camera-dot-pulse 900ms ease-in-out infinite;
+}
+
+@keyframes camera-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.38; transform: scale(0.8); }
 }
 
 .camera-failed {
@@ -646,9 +764,13 @@ a {
   place-items: center;
   align-content: center;
   gap: 6px;
-  background: rgba(2, 8, 13, 0.82);
+  top: auto;
+  min-height: 25px;
+  grid-template-columns: auto auto;
+  background: linear-gradient(to top, rgba(4, 6, 8, 0.94), rgba(4, 6, 8, 0.7));
   color: var(--amber);
-  font-size: 10px;
+  font-family: var(--font-mono);
+  font-size: 8px;
   font-weight: 900;
   letter-spacing: 0.1em;
   text-transform: uppercase;

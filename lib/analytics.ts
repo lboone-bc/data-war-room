@@ -9,8 +9,9 @@ type AnalyticsResult = {
   error?: string;
 };
 
-const ANALYTICS_CACHE_MS = 180_000;
-const ANALYTICS_CACHE_SECONDS = ANALYTICS_CACHE_MS / 1000;
+const REALTIME_CACHE_MS = 300_000;
+const RANKINGS_CACHE_MS = 900_000;
+const ANALYTICS_CACHE_SECONDS = RANKINGS_CACHE_MS / 1000;
 // GA's Realtime API property-token quota resets on the clock hour rather than
 // on a rolling window from the failed request, so the backoff targets the
 // next hour boundary (plus a small buffer for clock skew) instead of a fixed
@@ -18,14 +19,31 @@ const ANALYTICS_CACHE_SECONDS = ANALYTICS_CACHE_MS / 1000;
 // exhausted hour bucket) or wait longer than necessary past the reset.
 const GA_QUOTA_BACKOFF_BUFFER_MS = 90_000;
 const GA_QUOTA_MESSAGE =
-  "GA quota exhausted; realtime analytics blank until the quota resets.";
+  "GA quota exhausted; last-good analytics retained until the quota resets.";
 const GA_UNAVAILABLE_MESSAGE =
-  "Google Analytics feed unavailable; realtime analytics blank.";
+  "Google Analytics feed unavailable; showing last-good analytics when available.";
 
 let cachedAnalyticsResult: AnalyticsResult | null = null;
 let cachedAnalyticsAt = 0;
 let quotaBackoffUntil = 0;
 let pendingFetch: Promise<AnalyticsResult> | null = null;
+let analyticsClient: BetaAnalyticsDataClient | null = null;
+let activeHistory: AnalyticsSnapshot["minuteTrend"] = [];
+
+type RankingsCache = {
+  topPages: RankedMetric[];
+  topSources: RankedMetric[];
+  fetchedAt: string | null;
+  cachedAt: number;
+};
+
+let rankingsCache: RankingsCache = {
+  topPages: [],
+  topSources: [],
+  fetchedAt: null,
+  cachedAt: 0
+};
+let pendingRankings: Promise<RankingsCache> | null = null;
 
 function nextHourBoundaryMs(): number {
   const next = new Date();
@@ -146,12 +164,12 @@ function isQuotaError(message: string) {
 }
 
 function degradedAnalytics(message: string): AnalyticsResult {
+  const lastGood = cachedAnalyticsResult?.analytics ?? EMPTY_ANALYTICS;
   return {
     analytics: {
-      ...EMPTY_ANALYTICS,
+      ...lastGood,
       status: "degraded",
-      message,
-      fetchedAt: new Date().toISOString()
+      message
     },
     mode: "degraded",
     error: message
@@ -188,6 +206,70 @@ async function runStandardReport(
   return response.rows ?? [];
 }
 
+function getAnalyticsClient() {
+  analyticsClient ??= new BetaAnalyticsDataClient(getCredentialConfig());
+  return analyticsClient;
+}
+
+async function getRankings(
+  client: BetaAnalyticsDataClient,
+  propertyId: string
+): Promise<RankingsCache> {
+  const now = Date.now();
+  if (now - rankingsCache.cachedAt < RANKINGS_CACHE_MS) return rankingsCache;
+  if (pendingRankings) return pendingRankings;
+
+  pendingRankings = fetchRankings(client, propertyId).finally(() => {
+    pendingRankings = null;
+  });
+  return pendingRankings;
+}
+
+async function fetchRankings(
+  client: BetaAnalyticsDataClient,
+  propertyId: string
+): Promise<RankingsCache> {
+  try {
+    const [pageRows, sourceRows] = await Promise.all([
+      runStandardReport(client, propertyId, {
+        dateRanges: [{ startDate: "today", endDate: "today" }],
+        dimensions: [{ name: "unifiedScreenName" }],
+        metrics: [{ name: "screenPageViews" }],
+        orderBys: [{ metric: { metricName: "screenPageViews" }, desc: true }],
+        limit: 5
+      }),
+      runStandardReport(client, propertyId, {
+        dateRanges: [{ startDate: "today", endDate: "today" }],
+        dimensions: [{ name: "sessionDefaultChannelGroup" }],
+        metrics: [{ name: "sessions" }],
+        orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+        limit: 5
+      })
+    ]);
+
+    rankingsCache = {
+      topPages: pageRows.map((row) => ({
+        label: dimensionValue(row),
+        value: `${metricValue(row)} views`
+      })),
+      topSources: sourceRows.map((row) => ({
+        label: dimensionValue(row),
+        value: `${metricValue(row)} sessions`
+      })),
+      fetchedAt: new Date().toISOString(),
+      cachedAt: Date.now()
+    };
+    return rankingsCache;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown GA rankings error";
+    console.error("[wallboard] GA rankings fetch failed:", message);
+    // Mark the failed attempt as cached so a temporary failure cannot turn
+    // every 30-second wallboard poll into another GA request storm.
+    rankingsCache = { ...rankingsCache, cachedAt: Date.now() };
+    return rankingsCache;
+  }
+}
+
 export async function getAnalyticsSnapshot(
   config: ServerConfig
 ): Promise<AnalyticsResult> {
@@ -218,7 +300,7 @@ export async function getAnalyticsSnapshot(
     return cacheResult(degradedAnalytics(GA_QUOTA_MESSAGE));
   }
 
-  if (cachedAnalyticsResult && now - cachedAnalyticsAt < ANALYTICS_CACHE_MS) {
+  if (cachedAnalyticsResult && now - cachedAnalyticsAt < REALTIME_CACHE_MS) {
     return cachedAnalyticsResult;
   }
 
@@ -239,71 +321,33 @@ export async function getAnalyticsSnapshot(
 
 async function fetchAnalyticsFromGa(config: ServerConfig): Promise<AnalyticsResult> {
   try {
-    const client = new BetaAnalyticsDataClient(getCredentialConfig());
+    const client = getAnalyticsClient();
     const propertyId = config.gaPropertyId as string;
 
-    const [summaryRows, trendRows, pageRows, sourceRows, geoRows] =
-      await Promise.all([
+    // Two realtime reports every five minutes: one summary and one geo map.
+    // The former 30-row minutesAgo report was only used for anomaly history;
+    // maintaining that history from these cached summary samples removes a
+    // full Realtime request from every refresh batch. Same-day rankings use
+    // their own 15-minute standard-report cache below.
+    const [summaryRows, geoRows, rankings] = await Promise.all([
         runRealtimeReport(client, propertyId, {
           metrics: [{ name: "activeUsers" }, { name: "eventCount" }],
           dimensions: []
         }),
         runRealtimeReport(client, propertyId, {
-          dimensions: [{ name: "minutesAgo" }],
-          metrics: [{ name: "activeUsers" }],
-          limit: 30
-        }),
-        // Page popularity doesn't need realtime precision, and the Realtime
-        // API's per-property token quota is far more limited than the
-        // standard Reporting API's, so this uses a same-day standard report
-        // (like Sources below) instead of a second dimensioned realtime call.
-        runStandardReport(client, propertyId, {
-          dateRanges: [{ startDate: "today", endDate: "today" }],
-          dimensions: [{ name: "unifiedScreenName" }],
-          metrics: [{ name: "screenPageViews" }],
-          orderBys: [{ metric: { metricName: "screenPageViews" }, desc: true }],
-          limit: 5
-        }),
-        runStandardReport(client, propertyId, {
-          dateRanges: [{ startDate: "today", endDate: "today" }],
-          dimensions: [{ name: "sessionDefaultChannelGroup" }],
-          metrics: [{ name: "sessions" }],
-          orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
-          limit: 5
-        }),
-        runRealtimeReport(client, propertyId, {
           dimensions: [{ name: "countryId" }, { name: "country" }, { name: "city" }],
           metrics: [{ name: "activeUsers" }],
           limit: 12
-        })
+        }),
+        getRankings(client, propertyId)
       ]);
 
     const activeUsers = metricValue(summaryRows[0], 0);
     const eventCount = metricValue(summaryRows[0], 1);
-
-    const minuteTrend = trendRows
-      .map((row) => {
-        const minutesAgo = Number(dimensionValue(row, 0));
-        return {
-          minutesAgo,
-          label: minutesAgo === 0 ? "now" : `-${minutesAgo}`,
-          value: metricValue(row)
-        };
-      })
-      .filter((point) => Number.isFinite(point.minutesAgo))
-      .sort((a, b) => b.minutesAgo - a.minutesAgo)
-      .slice(-12)
-      .map(({ label, value }) => ({ label, value }));
-
-    const topPages: RankedMetric[] = pageRows.map((row) => ({
-      label: dimensionValue(row),
-      value: `${metricValue(row)} views`
-    }));
-
-    const topSources: RankedMetric[] = sourceRows.map((row) => ({
-      label: dimensionValue(row),
-      value: `${metricValue(row)} sessions`
-    }));
+    activeHistory = [
+      ...activeHistory,
+      { label: new Date().toISOString(), value: activeUsers }
+    ].slice(-12);
 
     const geo = geoRows.map((row) => {
       const countryCode = dimensionValue(row, 0);
@@ -331,13 +375,13 @@ async function fetchAnalyticsFromGa(config: ServerConfig): Promise<AnalyticsResu
       analytics: {
         status: "live",
         message: null,
-        fetchedAt: new Date().toISOString(),
+        fetchedAt: rankings.fetchedAt,
         cacheSeconds: ANALYTICS_CACHE_SECONDS,
         activeUsers,
         eventCount,
-        minuteTrend,
-        topPages,
-        topSources,
+        minuteTrend: activeHistory,
+        topPages: rankings.topPages,
+        topSources: rankings.topSources,
         geo
       }
     });

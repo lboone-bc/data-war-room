@@ -1,119 +1,107 @@
 import type { TrafficCamera } from "@/lib/types";
 
-export const TRAFFIC_CAMERA_REFRESH_SECONDS = 60;
+// DriveNC's developer API uses numeric camera IDs. The public GUID-style
+// routes cannot be derived from the API, so keep this curated corridor list
+// configuration-driven and explicit. All eight selected cameras have a live
+// HLS feed in Views[0].VideoUrl as of the 2026-07-16 verification pass.
+const CAMERA_CONFIG = [
+  { id: "4208", label: "I-26 MM37 — Long Shoals Rd", priority: true },
+  { id: "4839", label: "I-26 MM35", priority: false },
+  { id: "6120", label: "I-26 MM36", priority: false },
+  { id: "5269", label: "I-26 MM39", priority: false },
+  { id: "4210", label: "I-26 MM40", priority: false },
+  { id: "4868", label: "I-26 MM41", priority: false },
+  { id: "4876", label: "I-26 MM44 — US-25", priority: false },
+  { id: "4221", label: "US-25 — Airport Rd", priority: false }
+] as const;
 
-export const TRAFFIC_CAMERAS: TrafficCamera[] = [
-  {
-    id: "4210",
-    label: "DriveNC CCTV 4210",
-    url: "https://www.drivenc.gov/map/Cctv/4210"
-  },
-  {
-    id: "5269",
-    label: "DriveNC CCTV 5269",
-    url: "https://www.drivenc.gov/map/Cctv/5269"
-  },
-  {
-    id: "4208",
-    label: "DriveNC CCTV 4208",
-    url: "https://www.drivenc.gov/map/Cctv/4208"
-  },
-  {
-    id: "4839",
-    label: "DriveNC CCTV 4839",
-    url: "https://www.drivenc.gov/map/Cctv/4839"
-  },
-  {
-    id: "4224",
-    label: "DriveNC CCTV 4224",
-    url: "https://www.drivenc.gov/map/Cctv/4224"
-  },
-  {
-    id: "4221",
-    label: "DriveNC CCTV 4221",
-    url: "https://www.drivenc.gov/map/Cctv/4221"
-  },
-  {
-    id: "ipcamlive-3bwa7esgv64g9mu5x",
-    label: "Location Camera 1",
-    url: "https://s59.ipcamlive.com/streams/3bwa7esgv64g9mu5x/snapshot.jpg"
-  },
-  {
-    id: "ipcamlive-1cvoiombj6sxjywzv",
-    label: "Location Camera 2",
-    url: "https://s28.ipcamlive.com/streams/1cvoiombj6sxjywzv/snapshot.jpg"
-  }
-];
+export const TRAFFIC_CAMERA_REFRESH_SECONDS = 90;
 
-type CameraImage = {
-  bytes: Uint8Array;
-  contentType: string;
+const API_URL = "https://www.drivenc.gov/api/v2/get/cameras";
+const FETCH_TIMEOUT_MS = 10_000;
+const CACHE_MS = TRAFFIC_CAMERA_REFRESH_SECONDS * 1000;
+
+type DriveNcCamera = {
+  Id?: number;
+  Views?: Array<{
+    VideoUrl?: string | null;
+    Status?: string | null;
+  }>;
+};
+
+type CameraCache = {
+  cameras: TrafficCamera[];
   fetchedAt: number;
 };
 
-const FETCH_TIMEOUT_MS = 8000;
-const MIN_FORCE_REFRESH_MS = 55_000;
-const cameraCache = new Map<string, CameraImage>();
-const pendingFetches = new Map<string, Promise<CameraImage | null>>();
+let cache: CameraCache | null = null;
+let pendingFetch: Promise<TrafficCamera[]> | null = null;
+let lastAttemptAt = 0;
 
-export function getTrafficCamera(id: string) {
-  return TRAFFIC_CAMERAS.find((camera) => camera.id === id) ?? null;
+function fallbackCameras(): TrafficCamera[] {
+  return CAMERA_CONFIG.map((camera) => ({
+    ...camera,
+    videoUrl: null,
+    viewerUrl: `https://www.drivenc.gov/map/Cctv/${camera.id}`,
+    status: "Fallback"
+  }));
 }
 
-export async function getTrafficCameraImage(
-  id: string,
-  options: { forceRefresh?: boolean } = {}
-): Promise<CameraImage | null> {
-  const camera = getTrafficCamera(id);
-  if (!camera) return null;
+function mapCameras(rows: DriveNcCamera[]): TrafficCamera[] {
+  const byId = new Map(rows.map((camera) => [String(camera.Id), camera]));
 
-  const cached = cameraCache.get(id);
-  const now = Date.now();
-  const cacheAge = cached ? now - cached.fetchedAt : Infinity;
-  const cacheIsFresh = cacheAge < TRAFFIC_CAMERA_REFRESH_SECONDS * 1000;
-  const forceRefreshAllowed = options.forceRefresh && cacheAge >= MIN_FORCE_REFRESH_MS;
-
-  if (cached && cacheIsFresh && !forceRefreshAllowed) {
-    return cached;
-  }
-
-  const pending = pendingFetches.get(id);
-  if (pending) return pending;
-
-  const fetchPromise = fetchTrafficCameraImage(camera).finally(() => {
-    pendingFetches.delete(id);
+  return CAMERA_CONFIG.map((camera) => {
+    const view = byId.get(camera.id)?.Views?.[0];
+    return {
+      ...camera,
+      videoUrl:
+        typeof view?.VideoUrl === "string" && view.VideoUrl.trim()
+          ? view.VideoUrl.trim()
+          : null,
+      viewerUrl: `https://www.drivenc.gov/map/Cctv/${camera.id}`,
+      status: view?.Status || (view?.VideoUrl ? "Live" : "Fallback")
+    };
   });
-  pendingFetches.set(id, fetchPromise);
-
-  return fetchPromise;
 }
 
-async function fetchTrafficCameraImage(camera: TrafficCamera): Promise<CameraImage | null> {
-  const lastGood = cameraCache.get(camera.id) ?? null;
+export async function getTrafficCameras(apiKey: string | null): Promise<TrafficCamera[]> {
+  const now = Date.now();
+  if (cache && now - cache.fetchedAt < CACHE_MS) return cache.cameras;
+  if (!apiKey) return cache?.cameras ?? fallbackCameras();
+  if (!cache && now - lastAttemptAt < CACHE_MS) return fallbackCameras();
+  if (pendingFetch) return pendingFetch;
+
+  lastAttemptAt = now;
+  pendingFetch = fetchTrafficCameras(apiKey).finally(() => {
+    pendingFetch = null;
+  });
+  return pendingFetch;
+}
+
+async function fetchTrafficCameras(apiKey: string): Promise<TrafficCamera[]> {
+  const lastGood = cache?.cameras ?? fallbackCameras();
 
   try {
-    const response = await fetch(camera.url, {
+    const url = new URL(API_URL);
+    url.searchParams.set("key", apiKey);
+    url.searchParams.set("format", "json");
+    const response = await fetch(url, {
       cache: "no-store",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      headers: {
-        "accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
-      }
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
     });
+    if (!response.ok) throw new Error(`DriveNC API returned ${response.status}`);
 
-    const contentType = response.headers.get("content-type") || "image/jpeg";
-    if (!response.ok || !contentType.startsWith("image/")) return lastGood;
+    const rows = (await response.json()) as DriveNcCamera[];
+    const cameras = mapCameras(rows);
+    if (!cameras.some((camera) => camera.videoUrl)) {
+      throw new Error("DriveNC API returned no live streams for configured cameras");
+    }
 
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (!bytes.length) return lastGood;
-
-    const image = {
-      bytes,
-      contentType,
-      fetchedAt: Date.now()
-    };
-    cameraCache.set(camera.id, image);
-    return image;
-  } catch {
+    cache = { cameras, fetchedAt: Date.now() };
+    return cameras;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown DriveNC error";
+    console.error("[wallboard] DriveNC camera metadata fetch failed:", message);
     return lastGood;
   }
 }

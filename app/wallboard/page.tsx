@@ -22,9 +22,10 @@ import {
   Youtube
 } from "lucide-react";
 import { geoEquirectangular, geoPath } from "d3-geo";
+import Hls from "hls.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { feature } from "topojson-client";
-import type { Alert, Severity, SocialPost, WallboardPayload } from "@/lib/types";
+import type { Alert, Severity, SocialPost, TrafficCamera, WallboardPayload } from "@/lib/types";
 import worldAtlas from "world-atlas/countries-110m.json";
 
 const POLL_MS = 30000;
@@ -785,16 +786,150 @@ function WeatherPanel({ payload }: { payload: WallboardPayload }) {
   );
 }
 
+const HLS_CONNECT_TIMEOUT_MS = 18_000;
+const CAMERA_IFRAME_WIDTH = 1600;
+const CAMERA_IFRAME_HEIGHT = 1000;
+
+function CameraFallback({ camera }: { camera: TrafficCamera }) {
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  useEffect(() => {
+    const shell = shellRef.current;
+    const iframe = iframeRef.current;
+    if (!shell || !iframe) return;
+
+    const updateScale = () => {
+      const rect = shell.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const scale = Math.max(
+        rect.width / CAMERA_IFRAME_WIDTH,
+        rect.height / CAMERA_IFRAME_HEIGHT
+      );
+      iframe.style.transform = `scale(${scale})`;
+    };
+
+    updateScale();
+    const observer = new ResizeObserver(updateScale);
+    observer.observe(shell);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div className="camera-fallback-frame" ref={shellRef}>
+      <iframe
+        ref={iframeRef}
+        src={camera.viewerUrl}
+        title={camera.label}
+        loading="lazy"
+        referrerPolicy="strict-origin-when-cross-origin"
+      />
+    </div>
+  );
+}
+
+function TrafficCameraTile({
+  camera,
+  retryKey
+}: {
+  camera: TrafficCamera;
+  retryKey: number;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [state, setState] = useState<"connecting" | "live" | "fallback">(
+    camera.videoUrl ? "connecting" : "fallback"
+  );
+
+  useEffect(() => {
+    if (!camera.videoUrl) {
+      setState("fallback");
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video) return;
+    let hls: Hls | null = null;
+    let settled = false;
+    setState("connecting");
+
+    const markLive = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(watchdog);
+      setState("live");
+    };
+    const markFailed = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(watchdog);
+      setState("fallback");
+    };
+    const watchdog = window.setTimeout(markFailed, HLS_CONNECT_TIMEOUT_MS);
+
+    video.addEventListener("playing", markLive);
+    video.addEventListener("error", markFailed, { once: true });
+    video.muted = true;
+    video.playsInline = true;
+    video.autoplay = true;
+
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = camera.videoUrl;
+      void video.play().catch(() => undefined);
+    } else if (Hls.isSupported()) {
+      hls = new Hls({ liveSyncDurationCount: 3 });
+      hls.loadSource(camera.videoUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        void video.play().catch(() => undefined);
+      });
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) markFailed();
+      });
+    } else {
+      markFailed();
+    }
+
+    return () => {
+      settled = true;
+      window.clearTimeout(watchdog);
+      video.removeEventListener("playing", markLive);
+      video.removeEventListener("error", markFailed);
+      hls?.destroy();
+      video.removeAttribute("src");
+      video.load();
+    };
+  }, [camera.videoUrl, retryKey]);
+
+  return (
+    <div
+      className={`camera-tile${camera.priority ? " priority" : ""} ${state}`}
+      aria-label={`${camera.label}: ${state === "live" ? "live stream" : "DriveNC fallback"}`}
+    >
+      <span className="camera-status-dot" aria-hidden="true" />
+      {state === "fallback" ? (
+        <CameraFallback camera={camera} />
+      ) : (
+        <video ref={videoRef} aria-label={camera.label} />
+      )}
+      {state === "fallback" ? (
+        <div className="camera-failed">
+          <AlertTriangle size={14} />
+          viewer fallback
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function TrafficCameraPanel({ payload }: { payload: WallboardPayload }) {
   const [refreshedAt, setRefreshedAt] = useState(() => new Date());
-  const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
+  const [retryKey, setRetryKey] = useState(0);
   const refreshMs = payload.trafficCameras.refreshSeconds * 1000;
-  const refreshKey = refreshedAt.getTime();
 
   useEffect(() => {
     const interval = window.setInterval(() => {
       setRefreshedAt(new Date());
-      setFailedIds(new Set());
+      setRetryKey((current) => current + 1);
     }, refreshMs);
     return () => window.clearInterval(interval);
   }, [refreshMs]);
@@ -802,30 +937,12 @@ function TrafficCameraPanel({ payload }: { payload: WallboardPayload }) {
   return (
     <Panel title="Traffic Cameras" icon={<Camera size={18} />} className="camera-panel">
       <div className="camera-grid">
-        {payload.trafficCameras.cameras.map((camera) => {
-          const failed = failedIds.has(camera.id);
-
-          return (
-            <div key={camera.id} className="camera-tile">
-              <img
-                src={`/api/traffic-camera/${camera.id}?refresh=${refreshKey}`}
-                alt={camera.label}
-                onError={() => {
-                  setFailedIds((current) => new Set(current).add(camera.id));
-                }}
-              />
-              {failed ? (
-                <div className="camera-failed">
-                  <AlertTriangle size={16} />
-                  feed unavailable
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
+        {payload.trafficCameras.cameras.map((camera) => (
+          <TrafficCameraTile key={camera.id} camera={camera} retryKey={retryKey} />
+        ))}
       </div>
       <div className="camera-refresh">
-        refresh {payload.trafficCameras.refreshSeconds}s - updated {timeLabel(refreshedAt.toISOString())}
+        live HLS - metadata {payload.trafficCameras.refreshSeconds}s - checked {timeLabel(refreshedAt.toISOString())}
       </div>
     </Panel>
   );

@@ -19,6 +19,7 @@ export type ServerConfig = {
   audioCooldownSeconds: number;
   youtubeLiveChannelHandle: string | null;
   youtubeFallbackChannelHandle: string | null;
+  driveNcApiKey: string | null;
   apifyToken: string | null;
   instagramProfileUrl: string;
   facebookPageUrl: string;
@@ -71,6 +72,7 @@ export function getServerConfig(): ServerConfig {
     // sensible fallback out of the box when the primary channel isn't live;
     // set to an empty string to disable the fallback entirely.
     youtubeFallbackChannelHandle: process.env.YOUTUBE_FALLBACK_CHANNEL_HANDLE || "@livenowfox",
+    driveNcApiKey: process.env.DRIVENC_API_KEY || null,
     apifyToken: process.env.APIFY_TOKEN || null,
     instagramProfileUrl: process.env.APIFY_INSTAGRAM_PROFILE_URL || "https://www.instagram.com/biltmorechurch/",
     facebookPageUrl: process.env.APIFY_FACEBOOK_PAGE_URL || "https://www.facebook.com/mybiltmorechurch/"

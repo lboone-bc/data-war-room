@@ -8,7 +8,7 @@ import {
   checkSsl,
   checkWebsite
 } from "@/lib/systemStatus";
-import { TRAFFIC_CAMERA_REFRESH_SECONDS, TRAFFIC_CAMERAS } from "@/lib/trafficCameras";
+import { getTrafficCameras, TRAFFIC_CAMERA_REFRESH_SECONDS } from "@/lib/trafficCameras";
 import type { SocialPost, WallboardPayload } from "@/lib/types";
 import { getArdenWeather } from "@/lib/weather";
 import { getYoutubeLiveStatus } from "@/lib/youtubeLive";
@@ -20,21 +20,6 @@ function hasAccess(request: NextRequest, expectedToken: string | null) {
   const headerToken = request.headers.get("x-wallboard-token");
   const queryToken = request.nextUrl.searchParams.get("token");
   return headerToken === expectedToken || queryToken === expectedToken;
-}
-
-// request.nextUrl.origin reflects the app's own internal bind address
-// (e.g. http://0.0.0.0:8080) when running behind a reverse proxy like
-// Railway's edge, not the public hostname — confirmed 2026-07-09 against a
-// live Railway deployment, where it broke every traffic-camera proxy URL.
-// Standard reverse-proxy convention (Railway, most PaaS/CDN edges) is to set
-// x-forwarded-host/x-forwarded-proto to the original public request; prefer
-// those when present and fall back to nextUrl.origin for local dev/anything
-// not behind a proxy.
-function publicOrigin(request: NextRequest) {
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  if (!forwardedHost) return request.nextUrl.origin;
-  const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
-  return `${forwardedProto}://${forwardedHost}`;
 }
 
 // Only echoes Access-Control-Allow-Origin back for an explicitly allowed
@@ -72,7 +57,7 @@ export async function GET(request: NextRequest) {
   }
 
   const generatedAt = new Date().toISOString();
-  const [analyticsResult, website, ssl, databaseMonitors, instagramPost, facebookPost, youtubeLive, localWeather] =
+  const [analyticsResult, website, ssl, databaseMonitors, instagramPost, facebookPost, youtubeLive, localWeather, trafficCameras] =
     await Promise.all([
       getAnalyticsSnapshot(config),
       checkWebsite(config),
@@ -89,7 +74,8 @@ export async function GET(request: NextRequest) {
       config.youtubeLiveChannelHandle
         ? getYoutubeLiveStatus(config.youtubeLiveChannelHandle)
         : Promise.resolve({ live: false, videoId: null }),
-      getArdenWeather()
+      getArdenWeather(),
+      getTrafficCameras(config.driveNcApiKey)
     ]);
 
   // Only spend a second request on the fallback channel when the primary
@@ -147,15 +133,10 @@ export async function GET(request: NextRequest) {
     localWeather,
     trafficCameras: {
       refreshSeconds: TRAFFIC_CAMERA_REFRESH_SECONDS,
-      // Absolute proxy URL (not the raw upstream vendor URL) built from this
-      // request's own origin, so it resolves correctly whether the caller is
-      // the same-origin /wallboard page or a static index.html hosted on a
-      // different domain. Never expose the real DriveNC/IPCamLive URLs here.
-      cameras: TRAFFIC_CAMERAS.map((camera) => ({
-        id: camera.id,
-        label: camera.label,
-        url: `${publicOrigin(request)}/api/traffic-camera/${camera.id}`
-      }))
+      // The developer API key stays server-side. Only the public HLS stream
+      // and viewer fallback URLs returned for the curated cameras reach the
+      // browser; both work from the React route and the Cloudflare index.
+      cameras: trafficCameras
     }
   };
 

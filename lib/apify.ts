@@ -26,12 +26,13 @@ const RUN_SYNC_URL = (actor: string, token: string) =>
 // lib/analytics.ts: in-flight de-dup, silent fallback to the last-good
 // result on failure, never throw.
 const CACHE_MS = 900_000;
+const FAILURE_BACKOFF_MS = 3_600_000;
 const RUN_TIMEOUT_MS = 45_000;
 
-type CacheEntry = { post: SocialPost | null; at: number };
+type CacheEntry = { post: SocialPost | null; at: number; retryAfter: number };
 
-const instagramCache: CacheEntry = { post: null, at: 0 };
-const facebookCache: CacheEntry = { post: null, at: 0 };
+const instagramCache: CacheEntry = { post: null, at: 0, retryAfter: 0 };
+const facebookCache: CacheEntry = { post: null, at: 0, retryAfter: 0 };
 let pendingInstagram: Promise<SocialPost | null> | null = null;
 let pendingFacebook: Promise<SocialPost | null> | null = null;
 
@@ -40,7 +41,9 @@ export async function getLatestInstagramPost(
   profileUrl: string
 ): Promise<SocialPost | null> {
   const now = Date.now();
-  if (now - instagramCache.at < CACHE_MS) return instagramCache.post;
+  if (now - instagramCache.at < CACHE_MS || now < instagramCache.retryAfter) {
+    return instagramCache.post;
+  }
   if (pendingInstagram) return pendingInstagram;
 
   pendingInstagram = fetchInstagramPost(token, profileUrl).finally(() => {
@@ -54,7 +57,9 @@ export async function getLatestFacebookPost(
   pageUrl: string
 ): Promise<SocialPost | null> {
   const now = Date.now();
-  if (now - facebookCache.at < CACHE_MS) return facebookCache.post;
+  if (now - facebookCache.at < CACHE_MS || now < facebookCache.retryAfter) {
+    return facebookCache.post;
+  }
   if (pendingFacebook) return pendingFacebook;
 
   pendingFacebook = fetchFacebookPost(token, pageUrl).finally(() => {
@@ -71,11 +76,11 @@ async function fetchInstagramPost(token: string, profileUrl: string): Promise<So
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ username: [profileUrl], resultsLimit: 1 })
     });
-    if (!response.ok) return instagramCache.post;
+    if (!response.ok) throw new Error(`Instagram actor returned ${response.status}`);
 
     const items = (await response.json()) as Array<Record<string, unknown>>;
     const item = items[0];
-    if (!item) return instagramCache.post;
+    if (!item) throw new Error("Instagram actor returned no dataset items");
 
     const post: SocialPost = {
       id: `instagram-${String(item.id ?? item.shortCode ?? item.url)}`,
@@ -86,8 +91,15 @@ async function fetchInstagramPost(token: string, profileUrl: string): Promise<So
     };
     instagramCache.post = post;
     instagramCache.at = Date.now();
+    instagramCache.retryAfter = 0;
     return post;
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown Instagram actor error";
+    console.error("[wallboard] Apify Instagram fetch failed:", message);
+    // Failed sync actor runs can still consume compute. Back off for an hour
+    // and keep the last-good post so a provider outage cannot trigger a new
+    // billed run on every 30-second wallboard poll.
+    instagramCache.retryAfter = Date.now() + FAILURE_BACKOFF_MS;
     return instagramCache.post;
   }
 }
@@ -100,11 +112,11 @@ async function fetchFacebookPost(token: string, pageUrl: string): Promise<Social
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ startUrls: [{ url: pageUrl }], resultsLimit: 1 })
     });
-    if (!response.ok) return facebookCache.post;
+    if (!response.ok) throw new Error(`Facebook actor returned ${response.status}`);
 
     const items = (await response.json()) as Array<Record<string, unknown>>;
     const item = items[0];
-    if (!item) return facebookCache.post;
+    if (!item) throw new Error("Facebook actor returned no dataset items");
 
     const post: SocialPost = {
       id: `facebook-${String(item.postId ?? item.url)}`,
@@ -115,8 +127,12 @@ async function fetchFacebookPost(token: string, pageUrl: string): Promise<Social
     };
     facebookCache.post = post;
     facebookCache.at = Date.now();
+    facebookCache.retryAfter = 0;
     return post;
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown Facebook actor error";
+    console.error("[wallboard] Apify Facebook fetch failed:", message);
+    facebookCache.retryAfter = Date.now() + FAILURE_BACKOFF_MS;
     return facebookCache.post;
   }
 }

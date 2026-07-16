@@ -16,7 +16,7 @@
     "status": "setup",
     "message": "Copy this file to wallboard.json and replace with sanitized public wallboard data.",
     "fetchedAt": null,
-    "cacheSeconds": 180,
+    "cacheSeconds": 900,
     "activeUsers": null,
     "eventCount": null,
     "minuteTrend": [],
@@ -77,7 +77,16 @@
     "forecast": []
   },
   "trafficCameras": {
-    "refreshSeconds": 60,
-    "cameras": []
+    "refreshSeconds": 90,
+    "cameras": [
+      {
+        "id": "4208",
+        "label": "I-26 MM37 — Long Shoals Rd",
+        "videoUrl": null,
+        "viewerUrl": "https://www.drivenc.gov/map/Cctv/4208",
+        "status": "Fallback",
+        "priority": true
+      }
+    ]
   }
 }
