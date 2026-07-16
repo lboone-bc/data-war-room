@@ -6,6 +6,7 @@
 - Purpose: Private emergency-monitoring-room style wallboard for the database administrators office TV.
 - Primary route: `/wallboard`
 - Static artifact: `public/index.html` is the Cloudflare-hosted wallboard. `wrangler.jsonc` serves `./public` through `cloudflare/worker.js`, which proxies `/api/*` to the secret-bearing Next.js service configured by `WALLBOARD_API_ORIGIN`.
+- Production display URL: `https://data-war-room.lboone.workers.dev/`. Git auto-deploy from `lboone-bc/data-war-room` was successfully restored and validated 2026-07-16. The static wallboard is operational; live telemetry remains pending until `WALLBOARD_API_ORIGIN` is configured with the Node backend's HTTPS origin.
 - Display target: single 16:9 landscape screen through Apple TV signage/browser software.
 - Brand posture: no visible organization branding.
 - Header: visible title is "War Room"; `.header-stats` carries the old footer telemetry; `Rock Update!` countdown ends at `2026-07-27T00:00:00-04:00`.

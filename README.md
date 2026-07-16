@@ -79,6 +79,8 @@ DRIVENC_API_KEY=drivenc_api_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 The public display now follows the same Git-connected Cloudflare Worker + static-assets model as `cctv-weather-wall`, while the existing Next.js service remains the private API backend. This split is deliberate: Cloudflare serves `public/index.html` and proxies `/api/*` same-origin; GA service-account credentials, Apify tokens, DriveNC keys, and monitor/dashboard configuration stay only on the Node backend.
 
+Production display: [https://data-war-room.lboone.workers.dev/](https://data-war-room.lboone.workers.dev/). The Cloudflare GitHub App is authorized for `lboone-bc/data-war-room`, and pushes to `main` trigger a verified Workers build/deploy. Until the Railway/Node backend is deployed and its URL is assigned to `WALLBOARD_API_ORIGIN`, the static shell is live but telemetry remains in its controlled setup state.
+
 ### 1. Deploy the API backend
 
 Railway remains a good backend target because it runs the complete Next.js server:
