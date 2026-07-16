@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Data War Room</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -447,6 +450,7 @@
         <div class="countdown" title="Rock Update countdown"><span>Rock Update!</span><strong id="countdown">--d --h --m</strong></div>
         <div class="clock" id="clock">--:--:--</div>
         <button class="icon-button" id="refreshButton" type="button" title="Refresh telemetry">↻</button>
+        <button class="icon-button" id="fullscreenButton" type="button" title="Enter fullscreen" aria-label="Enter fullscreen">⛶</button>
         <button class="audio-button" id="audioButton" type="button" title="Arm and test alert audio">arm audio</button>
       </div>
     </header>
@@ -1009,6 +1013,55 @@
     });
 
     $("refreshButton").addEventListener("click", () => { void load(); });
+
+    const fullscreenButton = $("fullscreenButton");
+    const fullscreenDocument = document;
+    const fullscreenElement = () =>
+      document.fullscreenElement || fullscreenDocument.webkitFullscreenElement || null;
+
+    function updateFullscreenButton() {
+      const active = Boolean(fullscreenElement());
+      fullscreenButton.textContent = active ? "×" : "⛶";
+      fullscreenButton.title = active ? "Exit fullscreen" : "Enter fullscreen";
+      fullscreenButton.setAttribute("aria-label", fullscreenButton.title);
+      fullscreenButton.setAttribute("aria-pressed", String(active));
+    }
+
+    async function toggleFullscreen() {
+      try {
+        if (fullscreenElement()) {
+          if (document.exitFullscreen) await document.exitFullscreen();
+          else await fullscreenDocument.webkitExitFullscreen?.();
+          return;
+        }
+
+        const root = document.documentElement;
+        if (root.requestFullscreen) await root.requestFullscreen({ navigationUI: "hide" });
+        else if (root.webkitRequestFullscreen) await root.webkitRequestFullscreen();
+        else {
+          // Some TV signage browsers expose fullscreen only through their own
+          // kiosk setting. Keep the wallboard aligned to the viewport and make
+          // the control's limitation explicit instead of silently doing nothing.
+          window.scrollTo(0, 0);
+          fullscreenButton.title = "Use this TV browser's kiosk/fullscreen setting";
+          fullscreenButton.setAttribute("aria-label", fullscreenButton.title);
+        }
+      } catch {
+        fullscreenButton.title = "Fullscreen was blocked; tap again or enable kiosk mode";
+        fullscreenButton.setAttribute("aria-label", fullscreenButton.title);
+      }
+    }
+
+    fullscreenButton.addEventListener("click", () => { void toggleFullscreen(); });
+    document.addEventListener("keydown", (event) => {
+      if (event.key.toLowerCase() !== "f" || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+      event.preventDefault();
+      void toggleFullscreen();
+    });
+    document.addEventListener("fullscreenchange", updateFullscreenButton);
+    document.addEventListener("webkitfullscreenchange", updateFullscreenButton);
+    updateFullscreenButton();
 
     window.setInterval(() => {
       const payload = state.payload || defaultPayload();

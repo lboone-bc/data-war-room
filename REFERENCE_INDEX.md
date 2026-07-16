@@ -57,6 +57,7 @@
 - Private display access is controlled by `WALLBOARD_ACCESS_TOKEN`. It is opt-in by design (unset means no auth gate) — publishing this app on the public internet requires setting it deliberately; there is no code-level enforcement.
 - Production `/api/wallboard` is same-origin in the Cloudflare Worker and does not need CORS or `WALLBOARD_ALLOWED_ORIGIN`.
 - Open Apple TV signage to the Cloudflare display root `/?token=...`; `/wallboard?token=...` remains the React/backend surface for local or diagnostic use.
+- The production static header has a fullscreen toggle and `F` shortcut using standard + WebKit fullscreen APIs. This control must remain aligned with the React `FullscreenButton`; TV signage apps without browser fullscreen support require their own kiosk setting.
 - Use dedicated least-privilege viewer credentials for any authenticated embed.
 - `.env.example` documents local/full configuration; `.dev.vars.example` documents the Cloudflare-local subset. Real values go in ignored `.env.local` / `.dev.vars` files or Cloudflare **Workers & Pages → data-war-room → Settings → Variables and Secrets**.
 - Public hosting target: one Git-connected Cloudflare Worker with static assets and a native API. Sensitive production values must use the Secret type. Verify them after Git deploys because Cloudflare's dashboard integration previously wiped a secret in the companion project.

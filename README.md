@@ -108,6 +108,8 @@ The remaining layout, threshold, and audio variables in [.env.example](/Users/lb
 
 After saving variables, open `https://data-war-room.lboone.workers.dev/?token=<WALLBOARD_ACCESS_TOKEN>` once in the signage browser. The display stores that access token locally for later refreshes. Provider keys and the GA private key never reach browser JavaScript.
 
+The production header includes a fullscreen button (`⛶`) and supports the `F` key. On a TV browser that does not expose the browser Fullscreen API, enable that signage app's own kiosk/fullscreen option; the wallboard already locks itself to the full viewport and declares standalone web-app capability.
+
 For local Worker testing, copy [.dev.vars.example](/Users/lboone/Documents/Data%20Monitoring%20Room/.dev.vars.example) to the ignored `.dev.vars`, fill the same names, and run `npm run dev:cloudflare`. A local `GOOGLE_APPLICATION_CREDENTIALS=/path/file.json` path only works with Next.js; the Worker uses JSON or email/private-key credentials even locally. Use `npm run deploy:cloudflare` only for a manual deployment; normal production deploys come from Git.
 
 Wrangler is pinned to the Node-20-compatible `~4.63.0` line. Newer Wrangler releases require Node 22; move that pin only during a coordinated Node 22 + Next.js/React migration.
