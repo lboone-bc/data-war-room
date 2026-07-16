@@ -549,8 +549,8 @@
 
     const params = new URLSearchParams(window.location.search);
     // Defaults to the same-origin API path. Next.js serves it directly in
-    // local/backend mode; the Cloudflare Worker proxies it to the configured
-    // secret-bearing API origin in production. Still overridable with
+    // local/full-app mode; the Cloudflare Worker implements the secret-bearing
+    // API itself in production. Still overridable with
     // ?api=<url> for diagnostics or a sanitized static JSON mirror.
     const configuredApi = params.get("api") || window.localStorage.getItem("wallboard_api_url") || "/api/wallboard";
     const configuredToken = params.get("token") || window.localStorage.getItem("wallboard_token") || "";
