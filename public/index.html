@@ -766,10 +766,13 @@
 
       const updateScale = () => {
         const rect = shell.getBoundingClientRect();
-        const scale = Math.min(1, rect.width / viewportWidth, rect.height / visibleHeight);
+        // Width drives the scale so the desktop dashboard remains readable.
+        // The panel height is the crop window; fitting the full iframe height
+        // here would shrink the dashboard into a tiny centered thumbnail.
+        const scale = Math.min(1, Math.max(0, rect.width - 2) / viewportWidth);
         const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
         stage.style.width = `${viewportWidth * safeScale}px`;
-        stage.style.height = `${visibleHeight * safeScale}px`;
+        stage.style.height = `${Math.min(rect.height, visibleHeight * safeScale)}px`;
         iframe.style.transform = `scale(${safeScale})`;
       };
 
