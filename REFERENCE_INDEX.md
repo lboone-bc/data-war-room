@@ -29,6 +29,7 @@
   - Implementations: `cloudflare/providers.js` in production, cached one hour per platform, and `lib/apify.ts` locally, cached 15 minutes. Failed/empty runs retain last-good content. `APIFY_TOKEN` is optional and should stay unset when the requirement is strictly $0 hosting/provider spend.
 - Existing active database dashboard
   - Config: `DATABASE_DASHBOARD_URL`
+  - Production status: configured as an encrypted Cloudflare Worker secret and payload-verified 2026-07-16.
   - Rendered as a scaled iframe and refreshed on `DATABASE_REFRESH_SECONDS`.
   - The panel does not render refresh/last-updated toolbar text; that space belongs to the iframe.
   - Zoom/viewport config: `DATABASE_FRAME_VIEWPORT_WIDTH`, `DATABASE_FRAME_VIEWPORT_HEIGHT`; default is `1024x640`.
@@ -42,6 +43,7 @@
   - Website health checks are passive by default; enable explicitly before sending synthetic `HEAD` requests to the public website.
 - YouTube live status (Live Stream panel)
   - Config: `YOUTUBE_LIVE_CHANNEL_HANDLE`, `YOUTUBE_FALLBACK_CHANNEL_HANDLE` (defaults to `@livenowfox`)
+  - Production status: both handles configured and payload-verified 2026-07-16; primary was offline and the fallback was active during the check.
   - No API key required — `lib/youtubeLive.ts` scrapes the channel's `/<handle>/live` page canonical link to detect an active broadcast, cached 45 seconds with the same silent-fallback discipline as every other external call. When the primary channel is live, shows a muted autoplaying embed with a "LIVE" badge; when it isn't, falls back to the fallback channel (clearly badged as such) if that one is live; otherwise a quiet "Not currently live" state. Missing `YOUTUBE_LIVE_CHANNEL_HANDLE` means the panel doesn't render at all rather than showing a setup warning.
 - National Weather Service API (Arden Weather panel)
   - Config: none.
