@@ -7,6 +7,7 @@
 - Primary route: `/wallboard`
 - Production artifact: `public/index.html` is served from the static-assets binding in `wrangler.jsonc`; `cloudflare/worker.js` implements `/api/wallboard` in the same Worker. Provider modules are `cloudflare/analytics.js`, `cloudflare/providers.js`, `cloudflare/config.js`, and `cloudflare/cache.js`. Railway/another Node host and `WALLBOARD_API_ORIGIN` are not part of production.
 - Production display URL: `https://data-war-room.lboone.workers.dev/`. Git auto-deploy from `lboone-bc/data-war-room` was restored and validated 2026-07-16. The Cloudflare Worker is designed for the free plan and degrades individual feeds when their optional variables are absent.
+- Git connection was explicitly reconnected 2026-07-16 after pushes stopped triggering builds; `main` deploys with `npm run deploy:cloudflare`, and non-production builds are disabled.
 - Production GA status: live-verified 2026-07-16 with `GA_PROPERTY_ID` and encrypted `GOOGLE_APPLICATION_CREDENTIALS_JSON`; the service account can read realtime summary/geo and same-day page/source reports. The downloaded JSON is a private credential and must stay outside Git.
 - Display target: single 16:9 landscape screen through Apple TV signage/browser software.
 - Brand posture: no visible organization branding.
