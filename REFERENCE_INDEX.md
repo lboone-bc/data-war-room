@@ -7,6 +7,7 @@
 - Primary route: `/wallboard`
 - Production artifact: `public/index.html` is served from the static-assets binding in `wrangler.jsonc`; `cloudflare/worker.js` implements `/api/wallboard` in the same Worker. Provider modules are `cloudflare/analytics.js`, `cloudflare/providers.js`, `cloudflare/config.js`, and `cloudflare/cache.js`. Railway/another Node host and `WALLBOARD_API_ORIGIN` are not part of production.
 - Production display URL: `https://data-war-room.lboone.workers.dev/`. Git auto-deploy from `lboone-bc/data-war-room` was restored and validated 2026-07-16. The Cloudflare Worker is designed for the free plan and degrades individual feeds when their optional variables are absent.
+- Production GA status: live-verified 2026-07-16 with `GA_PROPERTY_ID` and encrypted `GOOGLE_APPLICATION_CREDENTIALS_JSON`; the service account can read realtime summary/geo and same-day page/source reports. The downloaded JSON is a private credential and must stay outside Git.
 - Display target: single 16:9 landscape screen through Apple TV signage/browser software.
 - Brand posture: no visible organization branding.
 - Header: visible title is "War Room"; `.header-stats` carries the old footer telemetry; `Rock Update!` countdown ends at `2026-07-27T00:00:00-04:00`.
@@ -59,6 +60,7 @@
 - Use dedicated least-privilege viewer credentials for any authenticated embed.
 - `.env.example` documents local/full configuration; `.dev.vars.example` documents the Cloudflare-local subset. Real values go in ignored `.env.local` / `.dev.vars` files or Cloudflare **Workers & Pages → data-war-room → Settings → Variables and Secrets**.
 - Public hosting target: one Git-connected Cloudflare Worker with static assets and a native API. Sensitive production values must use the Secret type. Verify them after Git deploys because Cloudflare's dashboard integration previously wiped a secret in the companion project.
+- Cloudflare production deploy command: `npm run deploy:cloudflare` so the repository-pinned Wrangler consumes `wrangler.jsonc`. The bare `npx wrangler deploy` command was removed from dashboard build settings after Cloudflare's latest auto-config tried `opennextjs-cloudflare` and rejected the unrelated Next.js 14 local surface. Non-production version uploads use `npm exec -- wrangler versions upload`.
 
 ## Alerting
 
