@@ -38,6 +38,7 @@ const NCDOT_HLS_HOST_PATTERN =
   /^[a-z0-9-]+\.services\.ncdot\.gov$/i;
 const NCDOT_HLS_PATH_PATTERN =
   /^\/chan-[a-z0-9_-]+\/index\.m3u8$/i;
+const PERSISTED_CACHE_MAX_AGE_SECONDS = 24 * 60 * 60;
 
 let cameraMetaCache = { data: null, fetchedAt: 0 };
 let cameraMetaRefreshInProgress = false;
@@ -47,6 +48,45 @@ let activeSigningFlows = 0;
 const signingFlowWaiters = [];
 const signedMediaCache = new Map();
 const signedMediaRefreshReservations = new Set();
+
+function persistentCacheRequest(key) {
+  return new Request(
+    `https://wallboard-camera-cache.invalid/${encodeURIComponent(key)}`
+  );
+}
+
+async function readPersistentRecord(key) {
+  if (typeof caches === "undefined") return null;
+  try {
+    const response = await caches.default.match(
+      persistentCacheRequest(key)
+    );
+    return response ? await response.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writePersistentRecord(key, value) {
+  if (typeof caches === "undefined") return;
+  try {
+    await caches.default.put(
+      persistentCacheRequest(key),
+      Response.json(
+        { value, persistedAt: Date.now() },
+        {
+          headers: {
+            "cache-control":
+              `public, max-age=${PERSISTED_CACHE_MAX_AGE_SECONDS}`
+          }
+        }
+      )
+    );
+  } catch {
+    // Cache API persistence is an optimization; warm-isolate state still
+    // provides the same validated behavior when the cache is unavailable.
+  }
+}
 
 function snapshotPath(id) {
   return `/api/traffic-camera/${encodeURIComponent(id)}`;
@@ -429,6 +469,45 @@ function signedMediaIsWithinMaxAge(entry, now) {
   );
 }
 
+function persistedSignedEntryIsSafe(entry, media, now) {
+  if (
+    !entry ||
+    typeof entry !== "object" ||
+    !entry.data ||
+    !cacheMatchesMedia(entry, media) ||
+    !Number.isFinite(entry.checkedAt) ||
+    !Number.isFinite(entry.lastAttemptAt) ||
+    !signedMediaIsWithinMaxAge(entry, now)
+  ) {
+    return false;
+  }
+  if (entry.data.id !== media.id) return false;
+  if (entry.data.hlsAvailable) {
+    return Boolean(
+      parsePreviouslySignedHlsUrl(
+        entry.data.videoUrl,
+        media.unsignedVideoUrl
+      )
+    );
+  }
+  return entry.data.videoUrl === null;
+}
+
+async function hydrateSignedMediaCache(metadata, now) {
+  await Promise.all(
+    metadata.map(async (media) => {
+      if (signedMediaCache.has(media.id)) return;
+      const record = await readPersistentRecord(
+        `signed-media-v1-${media.id}`
+      );
+      const entry = record?.value;
+      if (persistedSignedEntryIsSafe(entry, media, now)) {
+        signedMediaCache.set(media.id, entry);
+      }
+    })
+  );
+}
+
 function cachedMediaForResponse(entry, now) {
   let refreshAt =
     entry.renewalRetryAt ||
@@ -508,6 +587,10 @@ async function refreshSignedMedia(media) {
         renewalRetryAt: Date.now() + UNAVAILABLE_HLS_RETRY_MS
       };
       signedMediaCache.set(media.id, retained);
+      await writePersistentRecord(
+        `signed-media-v1-${media.id}`,
+        retained
+      );
       return retained;
     }
   }
@@ -523,6 +606,7 @@ async function refreshSignedMedia(media) {
     renewalRetryAt: null
   };
   signedMediaCache.set(media.id, entry);
+  await writePersistentRecord(`signed-media-v1-${media.id}`, entry);
   return entry;
 }
 
@@ -544,6 +628,18 @@ async function mapWithConcurrency(items, limit, mapper) {
 
 async function getCameraMetadata(config, now) {
   if (!config.driveNcApiKey) return [];
+  if (!cameraMetaCache.data) {
+    const persisted = await readPersistentRecord(
+      "camera-inventory-v1"
+    );
+    if (
+      persisted?.value &&
+      Array.isArray(persisted.value.data) &&
+      Number.isFinite(persisted.value.fetchedAt)
+    ) {
+      cameraMetaCache = persisted.value;
+    }
+  }
   if (
     cameraMetaCache.data &&
     now - cameraMetaCache.fetchedAt < CAMERA_META_CACHE_TTL_MS
@@ -586,6 +682,10 @@ async function getCameraMetadata(config, now) {
       return extractMedia(row, configured);
     });
     cameraMetaCache = { data: selected, fetchedAt: now };
+    await writePersistentRecord(
+      "camera-inventory-v1",
+      cameraMetaCache
+    );
     return selected;
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown";
@@ -599,6 +699,7 @@ async function getCameraMetadata(config, now) {
 }
 
 async function resolveMediaWithinSigningBudget(metadata, now, forceCameraId) {
+  await hydrateSignedMediaCache(metadata, now);
   const dueIndexes = new Set(
     metadata
       .map((media, index) => ({ media, index }))

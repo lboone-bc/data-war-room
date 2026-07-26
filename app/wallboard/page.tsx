@@ -989,6 +989,7 @@ function TrafficCameraPanel({ payload }: { payload: WallboardPayload }) {
   const [cameras, setCameras] = useState<TrafficCamera[]>(
     () => payload.trafficCameras.cameras
   );
+  const cameraStateRef = useRef(cameras);
   const requestCameraMetadataRef = useRef<
     (cameraId?: string) => void
   >(() => undefined);
@@ -1045,6 +1046,7 @@ function TrafficCameraPanel({ payload }: { payload: WallboardPayload }) {
         CAMERA_API_TIMEOUT_MS
       );
       let nextRefreshMs = HLS_RECOVERY_RETRY_MS;
+      let nextForceCameraId: string | undefined;
 
       try {
         const token =
@@ -1084,8 +1086,21 @@ function TrafficCameraPanel({ payload }: { payload: WallboardPayload }) {
             )
             .map((camera) => [String(camera.id), camera])
         );
-        setCameras((current) =>
-          current.map((existing) => {
+        const currentlyLiveIds = new Set(
+          cameraStateRef.current
+            .filter(
+              (camera) =>
+                camera.hlsAvailable && Boolean(camera.videoUrl)
+            )
+            .map((camera) => camera.id)
+        );
+        nextForceCameraId = next.find(
+          (camera) =>
+            camera?.retryHls &&
+            !currentlyLiveIds.has(String(camera.id))
+        )?.id;
+        setCameras((current) => {
+          const merged = current.map((existing) => {
             const candidate = byId.get(existing.id);
             if (
               !candidate ||
@@ -1106,8 +1121,10 @@ function TrafficCameraPanel({ payload }: { payload: WallboardPayload }) {
               return existing;
             }
             return { ...existing, ...candidate };
-          })
-        );
+          });
+          cameraStateRef.current = merged;
+          return merged;
+        });
         setRefreshedAt(new Date());
 
         const refreshHints = next
@@ -1136,7 +1153,7 @@ function TrafficCameraPanel({ payload }: { payload: WallboardPayload }) {
           pendingForcedCameraIds.delete(pendingCameraId);
           void refreshMetadata(pendingCameraId);
         } else {
-          scheduleRefresh(nextRefreshMs);
+          scheduleRefresh(nextRefreshMs, nextForceCameraId);
         }
       }
     };

@@ -1090,7 +1090,7 @@
       }
     }
 
-    function scheduleCameraRefresh(delayMs) {
+    function scheduleCameraRefresh(delayMs, forceCameraId = null) {
       const safeDelay = Math.max(1000, delayMs);
       const dueAt = Date.now() + safeDelay;
       if (cameraRefreshTimer && cameraRefreshDueAt <= dueAt) return;
@@ -1099,7 +1099,10 @@
       cameraRefreshTimer = setTimeout(() => {
         cameraRefreshTimer = null;
         cameraRefreshDueAt = 0;
-        void refreshCameraMeta();
+        void refreshCameraMeta({
+          forceHealthCheck: Boolean(forceCameraId),
+          cameraId: forceCameraId
+        });
       }, safeDelay);
     }
 
@@ -1121,6 +1124,7 @@
       }
       cameraRefreshInFlight = true;
       let nextRefreshMs = CAMERA_UNAVAILABLE_RETRY_MS;
+      let nextForceCameraId = null;
       let metadataAvailable = false;
       let payload = [];
       const controller = new AbortController();
@@ -1228,6 +1232,14 @@
         const hasLiveHls = payload.some(
           (camera) => camera?.hlsAvailable && camera?.videoUrl
         );
+        nextForceCameraId =
+          payload.find((camera) => {
+            if (!camera?.retryHls) return false;
+            const tile = document.querySelector(
+              `.camera-tile[data-id="${CSS.escape(String(camera.id))}"]`
+            );
+            return !tile?.querySelector("video");
+          })?.id ?? null;
         text(
           "cameraRefresh",
           `${hasLiveHls ? "signed live HLS - snapshot recovery" : "NCDOT snapshots - checking HLS"} - checked ${timeLabel(new Date().toISOString())}`
@@ -1243,7 +1255,7 @@
             cameraId: pendingCameraId
           });
         } else {
-          scheduleCameraRefresh(nextRefreshMs);
+          scheduleCameraRefresh(nextRefreshMs, nextForceCameraId);
         }
       }
     }
