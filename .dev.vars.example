@@ -10,6 +10,7 @@ GA_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 # Alternatively, omit the two credential lines above and use the full JSON:
 # GOOGLE_APPLICATION_CREDENTIALS_JSON={"type":"service_account",...}
 
+# Camera inventory only; the Worker performs the public signed-HLS exchange.
 DRIVENC_API_KEY=drivenc_api_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 DATABASE_DASHBOARD_URL=https://dashboard.example.com/embed/token
 DATABASE_MONITORS_STATUS_URL=https://status.example.com/monitors.json

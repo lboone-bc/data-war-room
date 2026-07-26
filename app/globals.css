@@ -748,6 +748,15 @@ a {
   animation: camera-dot-pulse 2.2s ease-in-out infinite;
 }
 
+.camera-tile.error .camera-status-dot {
+  background: var(--red);
+  animation: camera-dot-pulse 1.1s ease-in-out infinite;
+}
+
+.camera-tile.error .camera-failed {
+  color: var(--red);
+}
+
 @keyframes camera-dot-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.38; transform: scale(0.8); }

@@ -787,6 +787,11 @@ function WeatherPanel({ payload }: { payload: WallboardPayload }) {
 }
 
 const HLS_CONNECT_TIMEOUT_MS = 18_000;
+const HLS_STALL_CHECK_MS = 5_000;
+const HLS_STALL_TIMEOUT_MS = 25_000;
+const HLS_RECOVERY_RETRY_MS = 10_000;
+const CAMERA_METADATA_REFRESH_MS = 90_000;
+const CAMERA_API_TIMEOUT_MS = 60_000;
 
 function CameraSnapshot({
   camera,
@@ -829,18 +834,22 @@ function CameraSnapshot({
 
 function TrafficCameraTile({
   camera,
-  retryKey
+  retryKey,
+  onPlaybackFailure
 }: {
   camera: TrafficCamera;
   retryKey: number;
+  onPlaybackFailure: (cameraId: string) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [state, setState] = useState<"connecting" | "live" | "snapshot">(
+  const [state, setState] = useState<
+    "connecting" | "live" | "snapshot" | "error"
+  >(
     camera.videoUrl ? "connecting" : "snapshot"
   );
 
   useEffect(() => {
-    if (!camera.videoUrl) {
+    if (!camera.hlsAvailable || !camera.videoUrl) {
       setState("snapshot");
       return;
     }
@@ -848,56 +857,110 @@ function TrafficCameraTile({
     const video = videoRef.current;
     if (!video) return;
     let hls: Hls | null = null;
-    let settled = false;
+    let disposed = false;
+    let failed = false;
+    let retryTimer: number | null = null;
+    let lastMediaTime = 0;
+    let lastProgressAt = Date.now();
     setState("connecting");
 
     const markLive = () => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(watchdog);
+      if (disposed || failed) return;
+      lastMediaTime = video.currentTime;
+      lastProgressAt = Date.now();
+      window.clearTimeout(connectTimer);
       setState("live");
     };
-    const markFailed = () => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(watchdog);
-      setState("snapshot");
+    const markFailed = (reason: string) => {
+      if (disposed || failed) return;
+      failed = true;
+      window.clearTimeout(connectTimer);
+      window.clearInterval(stallTimer);
+      hls?.destroy();
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      console.warn(
+        `[wallboard] Camera ${camera.id} HLS playback failed (${reason}); retrying signed metadata`
+      );
+      setState("error");
+      retryTimer = window.setTimeout(
+        () => onPlaybackFailure(camera.id),
+        HLS_RECOVERY_RETRY_MS
+      );
     };
-    const watchdog = window.setTimeout(markFailed, HLS_CONNECT_TIMEOUT_MS);
+    const connectTimer = window.setTimeout(
+      () => markFailed("initial connection timeout"),
+      HLS_CONNECT_TIMEOUT_MS
+    );
+    const stallTimer = window.setInterval(() => {
+      if (disposed || failed) return;
+      if (document.hidden) {
+        lastMediaTime = video.currentTime;
+        lastProgressAt = Date.now();
+        return;
+      }
+      if (Math.abs(video.currentTime - lastMediaTime) > 0.05) {
+        lastMediaTime = video.currentTime;
+        lastProgressAt = Date.now();
+        return;
+      }
+      if (Date.now() - lastProgressAt >= HLS_STALL_TIMEOUT_MS) {
+        markFailed("no media-time progress");
+      }
+    }, HLS_STALL_CHECK_MS);
 
     video.addEventListener("playing", markLive);
-    video.addEventListener("error", markFailed, { once: true });
+    const onVideoError = () =>
+      markFailed(video.error?.message || "video element error");
+    video.addEventListener("error", onVideoError);
     video.muted = true;
     video.playsInline = true;
     video.autoplay = true;
+    video.crossOrigin = "anonymous";
 
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = camera.videoUrl;
-      void video.play().catch(() => undefined);
+      void video
+        .play()
+        .catch((error) =>
+          markFailed(
+            error instanceof Error ? error.message : "autoplay rejected"
+          )
+        );
     } else if (Hls.isSupported()) {
       hls = new Hls({ liveSyncDurationCount: 3 });
       hls.loadSource(camera.videoUrl);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        void video.play().catch(() => undefined);
+        void video
+          .play()
+          .catch((error) =>
+            markFailed(
+              error instanceof Error ? error.message : "autoplay rejected"
+            )
+          );
       });
       hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (data.fatal) markFailed();
+        if (data.fatal) markFailed(`${data.type}: ${data.details}`);
       });
     } else {
-      markFailed();
+      markFailed("HLS playback unavailable");
     }
 
     return () => {
-      settled = true;
-      window.clearTimeout(watchdog);
+      disposed = true;
+      window.clearTimeout(connectTimer);
+      window.clearInterval(stallTimer);
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
       video.removeEventListener("playing", markLive);
-      video.removeEventListener("error", markFailed);
+      video.removeEventListener("error", onVideoError);
       hls?.destroy();
+      video.pause();
       video.removeAttribute("src");
       video.load();
     };
-  }, [camera.videoUrl, retryKey]);
+  }, [camera.hlsAvailable, camera.id, camera.videoUrl, onPlaybackFailure]);
 
   return (
     <div
@@ -905,15 +968,15 @@ function TrafficCameraTile({
       aria-label={`${camera.label}: ${state === "live" ? "live stream" : "NCDOT snapshot"}`}
     >
       <span className="camera-status-dot" aria-hidden="true" />
-      {state === "snapshot" ? (
+      {state === "snapshot" || state === "error" ? (
         <CameraSnapshot camera={camera} retryKey={retryKey} />
       ) : (
         <video ref={videoRef} aria-label={camera.label} />
       )}
-      {state === "snapshot" ? (
+      {state === "snapshot" || state === "error" ? (
         <div className="camera-failed">
           <RefreshCcw size={12} />
-          60s snapshot
+          {state === "error" ? "stream retrying" : "60s snapshot"}
         </div>
       ) : null}
     </div>
@@ -923,8 +986,20 @@ function TrafficCameraTile({
 function TrafficCameraPanel({ payload }: { payload: WallboardPayload }) {
   const [refreshedAt, setRefreshedAt] = useState(() => new Date());
   const [retryKey, setRetryKey] = useState(0);
+  const [cameras, setCameras] = useState<TrafficCamera[]>(
+    () => payload.trafficCameras.cameras
+  );
+  const requestCameraMetadataRef = useRef<
+    (cameraId?: string) => void
+  >(() => undefined);
   const refreshMs = payload.trafficCameras.refreshSeconds * 1000;
-  const hasLiveHls = payload.trafficCameras.cameras.some((camera) => camera.videoUrl);
+  const hasLiveHls = cameras.some(
+    (camera) => camera.hlsAvailable && camera.videoUrl
+  );
+
+  const requestPlaybackRecovery = useCallback((cameraId: string) => {
+    requestCameraMetadataRef.current(cameraId);
+  }, []);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -934,15 +1009,177 @@ function TrafficCameraPanel({ payload }: { payload: WallboardPayload }) {
     return () => window.clearInterval(interval);
   }, [refreshMs]);
 
+  useEffect(() => {
+    let disposed = false;
+    let requestInFlight = false;
+    let refreshTimer: number | null = null;
+    let refreshDueAt = 0;
+    const pendingForcedCameraIds = new Set<string>();
+
+    const scheduleRefresh = (
+      delayMs: number,
+      forceCameraId?: string
+    ) => {
+      const safeDelay = Math.max(1_000, delayMs);
+      const dueAt = Date.now() + safeDelay;
+      if (refreshTimer !== null && refreshDueAt <= dueAt) return;
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      refreshDueAt = dueAt;
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        refreshDueAt = 0;
+        void refreshMetadata(forceCameraId);
+      }, safeDelay);
+    };
+
+    const refreshMetadata = async (forceCameraId?: string) => {
+      if (disposed) return;
+      if (requestInFlight) {
+        if (forceCameraId) pendingForcedCameraIds.add(forceCameraId);
+        return;
+      }
+      requestInFlight = true;
+      const controller = new AbortController();
+      const timeout = window.setTimeout(
+        () => controller.abort(),
+        CAMERA_API_TIMEOUT_MS
+      );
+      let nextRefreshMs = HLS_RECOVERY_RETRY_MS;
+
+      try {
+        const token =
+          new URLSearchParams(window.location.search).get("token") ||
+          window.localStorage.getItem("wallboard_token");
+        const url = new URL("/api/cameras", window.location.origin);
+        if (token) url.searchParams.set("token", token);
+        if (forceCameraId) {
+          url.searchParams.set("refresh", "1");
+          url.searchParams.set("cameraId", forceCameraId);
+        }
+        const response = await fetch(url, {
+          cache: "no-store",
+          signal: controller.signal,
+          headers: token
+            ? { "x-wallboard-token": token }
+            : undefined
+        });
+        if (!response.ok) {
+          throw new Error(`camera API returned ${response.status}`);
+        }
+        const next = (await response.json()) as unknown;
+        if (!Array.isArray(next)) {
+          throw new Error("camera API returned an invalid payload");
+        }
+        if (disposed) return;
+
+        const byId = new Map(
+          next
+            .filter(
+              (camera): camera is TrafficCamera =>
+                Boolean(
+                  camera &&
+                    typeof camera === "object" &&
+                    "id" in camera
+                )
+            )
+            .map((camera) => [String(camera.id), camera])
+        );
+        setCameras((current) =>
+          current.map((existing) => {
+            const candidate = byId.get(existing.id);
+            if (
+              !candidate ||
+              (candidate.hlsAvailable && !candidate.videoUrl) ||
+              (!candidate.hlsAvailable && !candidate.imageUrl)
+            ) {
+              return existing;
+            }
+            if (
+              existing.hlsAvailable &&
+              existing.videoUrl &&
+              !candidate.hlsAvailable &&
+              candidate.retryHls
+            ) {
+              // A cold/partial signing pass must not tear down a player that
+              // is still advancing. Its own playback watchdog remains the
+              // authority until the server supplies a new signed URL.
+              return existing;
+            }
+            return { ...existing, ...candidate };
+          })
+        );
+        setRefreshedAt(new Date());
+
+        const refreshHints = next
+          .map((camera) => Number(camera?.refreshAfterMs))
+          .filter(
+            (delay) => Number.isFinite(delay) && delay >= 1_000
+          );
+        nextRefreshMs = next.length
+          ? Math.min(
+              CAMERA_METADATA_REFRESH_MS,
+              ...refreshHints
+            )
+          : HLS_RECOVERY_RETRY_MS;
+      } catch (error) {
+        console.warn(
+          "[wallboard] Camera metadata refresh failed; preserving current players",
+          error
+        );
+      } finally {
+        window.clearTimeout(timeout);
+        requestInFlight = false;
+        if (disposed) return;
+        const pendingCameraId =
+          pendingForcedCameraIds.values().next().value;
+        if (pendingCameraId) {
+          pendingForcedCameraIds.delete(pendingCameraId);
+          void refreshMetadata(pendingCameraId);
+        } else {
+          scheduleRefresh(nextRefreshMs);
+        }
+      }
+    };
+
+    requestCameraMetadataRef.current = (cameraId?: string) => {
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      refreshTimer = null;
+      refreshDueAt = 0;
+      void refreshMetadata(cameraId);
+    };
+
+    void refreshMetadata();
+    const refreshOnResume = () => {
+      if (!document.hidden) requestCameraMetadataRef.current();
+    };
+    window.addEventListener("online", refreshOnResume);
+    window.addEventListener("focus", refreshOnResume);
+    document.addEventListener("visibilitychange", refreshOnResume);
+
+    return () => {
+      disposed = true;
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      requestCameraMetadataRef.current = () => undefined;
+      window.removeEventListener("online", refreshOnResume);
+      window.removeEventListener("focus", refreshOnResume);
+      document.removeEventListener("visibilitychange", refreshOnResume);
+    };
+  }, []);
+
   return (
     <Panel title="Traffic Cameras" icon={<Camera size={18} />} className="camera-panel">
       <div className="camera-grid">
-        {payload.trafficCameras.cameras.map((camera) => (
-          <TrafficCameraTile key={camera.id} camera={camera} retryKey={retryKey} />
+        {cameras.map((camera) => (
+          <TrafficCameraTile
+            key={`${camera.id}:${camera.videoUrl || "snapshot"}`}
+            camera={camera}
+            retryKey={retryKey}
+            onPlaybackFailure={requestPlaybackRecovery}
+          />
         ))}
       </div>
       <div className="camera-refresh">
-        {hasLiveHls ? "live HLS - snapshot fallback" : "NCDOT snapshots - HLS auth-gated"} - {payload.trafficCameras.refreshSeconds}s - checked {timeLabel(refreshedAt.toISOString())}
+        {hasLiveHls ? "signed live HLS - snapshot recovery" : "NCDOT snapshots - checking HLS"} - checked {timeLabel(refreshedAt.toISOString())}
       </div>
     </Panel>
   );

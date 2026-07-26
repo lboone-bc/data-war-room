@@ -1,4 +1,4 @@
-import { isTrafficCameraId } from "./providers.js";
+import { isTrafficCameraId } from "./cameras.js";
 
 const SNAPSHOT_TTL_MS = 60_000;
 const STALE_RETENTION_SECONDS = 24 * 60 * 60;

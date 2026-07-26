@@ -92,7 +92,7 @@ Open **Cloudflare → Workers & Pages → data-war-room → Settings → Variabl
 | `GA_CLIENT_EMAIL` | Variable | For GA | Service-account `client_email`. |
 | `GA_PRIVATE_KEY` | Secret | For GA | Full service-account private key, including BEGIN/END lines. Use this with `GA_CLIENT_EMAIL`. |
 | `GOOGLE_APPLICATION_CREDENTIALS_JSON` | Secret | Alternative GA method | Full service-account JSON; use instead of the two GA credential fields above. |
-| `DRIVENC_API_KEY` | Secret | For NCDOT camera metadata | Same free DriveNC developer key used by `cctv-weather-wall`; it is not a media-server login. |
+| `DRIVENC_API_KEY` | Secret | For NCDOT camera inventory | Same free DriveNC developer key used by `cctv-weather-wall`; signed playback uses DriveNC's public grant exchange, not an NCDOT login. |
 | `DATABASE_DASHBOARD_URL` | Secret | For database panel | Public/kiosk/share URL; keep it secret when it contains a token. |
 | `DATABASE_MONITORS_STATUS_URL` | Secret | Optional | JSON/text monitor status endpoint. |
 | `YOUTUBE_LIVE_CHANNEL_HANDLE` | Variable | Optional | Primary handle such as `@BiltmoreChurch`. |
@@ -152,7 +152,8 @@ The token is stored in browser local storage and as a cookie so normal refreshes
 - The Cloudflare wallboard's World Access Map keeps a real equirectangular land/country silhouette visible even when GA has no active mapped countries; live dots are layered over `public/world-map.svg` using matching longitude/latitude percentage coordinates.
 - A "Live Stream" panel shows the Biltmore Church YouTube channel (`YOUTUBE_LIVE_CHANNEL_HANDLE`) when it's actively broadcasting: a muted, autoplaying embed of the live video with a "LIVE" badge. No YouTube Data API key is required — live/offline detection scrapes the channel's `/live` page canonical link (`lib/youtubeLive.ts`), cached 45 seconds, following the same silent-fallback discipline as the other external calls. When the primary channel isn't live, the panel falls back to a second channel (`YOUTUBE_FALLBACK_CHANNEL_HANDLE`, defaults to LiveNOW from Fox) if that one is live, clearly badged in amber so it never reads as "Biltmore is live." If neither is live, the panel shows a quiet "Not currently live" state with the channel link instead of an empty/broken embed. If `YOUTUBE_LIVE_CHANNEL_HANDLE` isn't set, the panel doesn't render at all rather than showing a setup warning.
 - Live video remains mounted across the 30-second telemetry refresh. The client only changes the YouTube iframe after it receives a positively identified different live video, so an unchanged stream is not restarted and a temporary offline/provider response does not blank a playing panel.
-- The right-side local-ops column shows Arden, NC weather above eight unlabeled NCDOT cameras. DriveNC metadata is cached server-side for 90 seconds. Before any `Views[0].VideoUrl` reaches browser code, the server performs an anonymous HLS-manifest preflight cached for 10 minutes; Safari uses native HLS and other browsers use `hls.js` only when that check succeeds. NCDOT's media hosts began returning an `XEngine` Basic-auth challenge on 2026-07-26, so the current safe path uses DriveNC's public JPEG frame through the allowlisted same-origin `/api/traffic-camera/<id>` proxy. Frames refresh every 60 seconds, concurrent requests share one fetch, and upstream failures retain the last good image. The display never loads an auth-gated NCDOT host directly, so it cannot raise a credential dialog. Labels stay in accessibility text only.
+- The right-side local-ops column shows Arden, NC weather above eight unlabeled NCDOT cameras. Tiles load same-origin JPEG snapshots immediately and progressively upgrade to live HLS through the no-store `/api/cameras` route. The server takes DriveNC's unsigned inventory URL, obtains a public per-camera grant, exchanges it for a short-lived 64-hex query token, strictly validates that the signed URL has the same expected NCDOT origin/path, and probes for a real `#EXTM3U` manifest before returning it. Unsigned URLs and upstream `WWW-Authenticate` headers never reach the browser, so the old XEngine login prompt cannot recur.
+- Camera inventory is cached for 90 seconds. Healthy signed URLs renew after five minutes, unavailable streams retry after 10 seconds, and a signed result cannot survive beyond 15 minutes without revalidation. Cloudflare signs at most four due cameras per request with three-way concurrency, allowing the browser to fill the eight-camera wall in two quota-safe passes. The browser preserves an unchanged healthy player, requires playback within 18 seconds, checks media progress every five seconds, and falls back after a 25-second stall. A failed tile shows a red snapshot for 10 seconds and then requests only that camera with `/api/cameras?refresh=1&cameraId=<id>`. The `/api/traffic-camera/<id>` proxy still verifies and caches JPEG frames for 60 seconds with in-flight de-duplication, failure backoff, and last-good fallback. Labels stay in accessibility text only.
 - The Active Database System panel intentionally has no refresh/last-updated toolbar; the iframe refresh still runs on `DATABASE_REFRESH_SECONDS`.
 
 ## Scripts
@@ -163,6 +164,7 @@ npm run dev:cloudflare
 npm run build
 npm run typecheck
 npm run lint
+npm run test:cameras
 npm run deploy:cloudflare
 ```
 

@@ -8,7 +8,10 @@ import {
   checkSsl,
   checkWebsite
 } from "@/lib/systemStatus";
-import { getTrafficCameras, TRAFFIC_CAMERA_REFRESH_SECONDS } from "@/lib/trafficCameras";
+import {
+  trafficCameraRoster,
+  TRAFFIC_CAMERA_REFRESH_SECONDS
+} from "@/lib/trafficCameras";
 import type { SocialPost, WallboardPayload } from "@/lib/types";
 import { getArdenWeather } from "@/lib/weather";
 import { getYoutubeLiveStatus } from "@/lib/youtubeLive";
@@ -57,7 +60,7 @@ export async function GET(request: NextRequest) {
   }
 
   const generatedAt = new Date().toISOString();
-  const [analyticsResult, website, ssl, databaseMonitors, instagramPost, facebookPost, youtubeLive, localWeather, trafficCameras] =
+  const [analyticsResult, website, ssl, databaseMonitors, instagramPost, facebookPost, youtubeLive, localWeather] =
     await Promise.all([
       getAnalyticsSnapshot(config),
       checkWebsite(config),
@@ -74,8 +77,7 @@ export async function GET(request: NextRequest) {
       config.youtubeLiveChannelHandle
         ? getYoutubeLiveStatus(config.youtubeLiveChannelHandle)
         : Promise.resolve({ live: false, videoId: null }),
-      getArdenWeather(),
-      getTrafficCameras(config.driveNcApiKey)
+      getArdenWeather()
     ]);
 
   // Only spend a second request on the fallback channel when the primary
@@ -133,10 +135,10 @@ export async function GET(request: NextRequest) {
     localWeather,
     trafficCameras: {
       refreshSeconds: TRAFFIC_CAMERA_REFRESH_SECONDS,
-      // The developer API key stays server-side. An HLS URL only reaches the
-      // browser after an anonymous manifest preflight succeeds; otherwise the
-      // same-origin snapshot route avoids upstream Basic-auth prompts.
-      cameras: trafficCameras
+      // The wallboard payload supplies the instant snapshot roster. The
+      // dedicated no-store /api/cameras route signs and probes HLS manifests
+      // progressively without putting unsigned URLs in this composed cache.
+      cameras: trafficCameraRoster()
     }
   };
 

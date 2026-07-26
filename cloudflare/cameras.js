@@ -1,8 +1,12 @@
-import type { TrafficCamera } from "@/lib/types";
+// DriveNC camera inventory and short-lived signed HLS delivery.
+//
+// Views[0].VideoUrl is an unsigned NCDOT HLS manifest. Loading it directly
+// produces an XEngine Basic-auth challenge, so an unsigned URL must never be
+// serialized to a browser. This module performs DriveNC's public grant/token
+// exchange, validates and probes the signed manifest server-side, and exposes
+// only the signed URL or this app's same-origin snapshot proxy.
 
-// DriveNC's developer API uses numeric camera IDs. Keep this curated corridor
-// list aligned with cloudflare/cameras.js.
-const CAMERA_CONFIG = [
+export const CAMERA_CONFIG = [
   { id: "4208", label: "I-26 MM37 — Long Shoals Rd", priority: true },
   { id: "4839", label: "I-26 MM35", priority: false },
   { id: "6120", label: "I-26 MM36", priority: false },
@@ -11,9 +15,7 @@ const CAMERA_CONFIG = [
   { id: "4868", label: "I-26 MM41", priority: false },
   { id: "4876", label: "I-26 MM44 — US-25", priority: false },
   { id: "4221", label: "US-25 — Airport Rd", priority: false }
-] as const;
-
-export const TRAFFIC_CAMERA_REFRESH_SECONDS = 60;
+];
 
 const CAMERA_META_CACHE_TTL_MS = 90_000;
 const SIGNED_HLS_RENEW_MS = 5 * 60_000;
@@ -22,6 +24,8 @@ const UNAVAILABLE_HLS_RETRY_MS = 10_000;
 const CAMERA_INVENTORY_TIMEOUT_MS = 15_000;
 const UPSTREAM_TIMEOUT_MS = 8_000;
 const MAX_CONCURRENT_SIGNING_FLOWS = 3;
+// Four worst-case flows, including bounded 429 retries and manifest probes,
+// stay below the Workers Free external-subrequest ceiling.
 const MAX_SIGNING_FLOWS_PER_REQUEST = 4;
 const RATE_LIMIT_RETRY_DELAYS_MS = [250, 750];
 const DRIVENC_CAMERA_API_URL =
@@ -35,60 +39,28 @@ const NCDOT_HLS_HOST_PATTERN =
 const NCDOT_HLS_PATH_PATTERN =
   /^\/chan-[a-z0-9_-]+\/index\.m3u8$/i;
 
-type CameraConfig = (typeof CAMERA_CONFIG)[number];
-
-type DriveNcCamera = {
-  Id?: number;
-  Views?: Array<{
-    VideoUrl?: string | null;
-    Status?: string | null;
-  }>;
-};
-
-type CameraSource = CameraConfig & {
-  unsignedVideoUrl: string | null;
-  viewerUrl: string;
-  status: string;
-};
-
-type SignedMediaEntry = {
-  data: TrafficCamera;
-  unsignedVideoUrl: string | null;
-  status: string;
-  checkedAt: number;
-  signedAt: number;
-  lastAttemptAt: number;
-  renewalRetryAt: number | null;
-};
-
-type CameraMetadataResponse = {
-  status: 200 | 502 | 503;
-  cameras: TrafficCamera[];
-  headers?: Record<string, string>;
-};
-
-let cameraMetaCache: { data: CameraSource[]; fetchedAt: number } | null = null;
-let cameraMetaFetch: Promise<CameraSource[]> | null = null;
+let cameraMetaCache = { data: null, fetchedAt: 0 };
+let cameraMetaRefreshInProgress = false;
 let cameraApiRequestInProgress = false;
 let signingSelectionCursor = 0;
 let activeSigningFlows = 0;
-const signingFlowWaiters: Array<() => void> = [];
-const signedMediaCache = new Map<string, SignedMediaEntry>();
-const signedMediaInFlight = new Map<string, Promise<SignedMediaEntry>>();
+const signingFlowWaiters = [];
+const signedMediaCache = new Map();
+const signedMediaRefreshReservations = new Set();
 
-function snapshotPath(id: string) {
+function snapshotPath(id) {
   return `/api/traffic-camera/${encodeURIComponent(id)}`;
 }
 
-function viewerUrl(id: string) {
+function viewerUrl(id) {
   return `https://www.drivenc.gov/map/Cctv/${encodeURIComponent(id)}`;
 }
 
-export function isTrafficCameraId(id: string): boolean {
-  return CAMERA_CONFIG.some((camera) => camera.id === id);
+export function isTrafficCameraId(id) {
+  return CAMERA_CONFIG.some((camera) => camera.id === String(id));
 }
 
-export function trafficCameraRoster(): TrafficCamera[] {
+export function trafficCameraRoster() {
   return CAMERA_CONFIG.map((camera) => ({
     ...camera,
     videoUrl: null,
@@ -103,29 +75,23 @@ export function trafficCameraRoster(): TrafficCamera[] {
   }));
 }
 
-function extractMedia(
-  row: DriveNcCamera,
-  configured: CameraConfig
-): CameraSource {
-  const view = row.Views?.[0];
+function extractMedia(camera, configured) {
+  const view = camera.Views?.[0] || {};
   return {
     ...configured,
     unsignedVideoUrl:
-      typeof view?.VideoUrl === "string" && view.VideoUrl.trim()
+      typeof view.VideoUrl === "string" && view.VideoUrl.trim()
         ? view.VideoUrl.trim()
         : null,
     viewerUrl: viewerUrl(configured.id),
-    status: typeof view?.Status === "string" ? view.Status : "Unknown"
+    status: typeof view.Status === "string" ? view.Status : "Unknown"
   };
 }
 
-export function parseExpectedHlsUrl(
-  value: unknown,
-  { requireToken = false }: { requireToken?: boolean } = {}
-): URL | null {
-  let url: URL;
+export function parseExpectedHlsUrl(value, { requireToken = false } = {}) {
+  let url;
   try {
-    url = new URL(String(value));
+    url = new URL(value);
   } catch {
     return null;
   }
@@ -136,6 +102,7 @@ export function parseExpectedHlsUrl(
       params[0][0] === "token" &&
       /^[a-f0-9]{64}$/i.test(params[0][1])
     : params.length === 0;
+
   if (
     url.protocol !== "https:" ||
     url.username ||
@@ -148,10 +115,11 @@ export function parseExpectedHlsUrl(
   ) {
     return null;
   }
+
   return url;
 }
 
-function validOpaqueValue(value: unknown, maxLength = 512) {
+function validOpaqueValue(value, maxLength = 512) {
   return (
     (typeof value === "string" &&
       value.length > 0 &&
@@ -160,29 +128,19 @@ function validOpaqueValue(value: unknown, maxLength = 512) {
   );
 }
 
-type HlsGrant = {
-  token: string;
-  sourceId: string | number;
-  systemSourceId: string | number;
-};
-
-function isValidGrant(value: unknown): value is HlsGrant {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-  const grant = value as Record<string, unknown>;
-  return (
-    typeof grant.token === "string" &&
-    /^[a-f0-9-]{36}$/i.test(grant.token) &&
-    validOpaqueValue(grant.sourceId) &&
-    validOpaqueValue(grant.systemSourceId)
+function validateGrant(value) {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      typeof value.token === "string" &&
+      /^[a-f0-9-]{36}$/i.test(value.token) &&
+      validOpaqueValue(value.sourceId) &&
+      validOpaqueValue(value.systemSourceId)
   );
 }
 
-export function buildSignedHlsUrl(
-  unsignedValue: unknown,
-  suffix: unknown
-): URL | null {
+export function buildSignedHlsUrl(unsignedValue, suffix) {
   const unsignedUrl = parseExpectedHlsUrl(unsignedValue);
   if (
     !unsignedUrl ||
@@ -194,6 +152,7 @@ export function buildSignedHlsUrl(
   ) {
     return null;
   }
+
   const signedUrl = new URL(unsignedUrl);
   signedUrl.search = suffix.slice(1);
   const verified = parseExpectedHlsUrl(signedUrl.href, {
@@ -209,10 +168,7 @@ export function buildSignedHlsUrl(
   return verified;
 }
 
-function parsePreviouslySignedHlsUrl(
-  value: unknown,
-  unsignedValue: unknown
-) {
+function parsePreviouslySignedHlsUrl(value, unsignedValue) {
   const unsignedUrl = parseExpectedHlsUrl(unsignedValue);
   const signedUrl = parseExpectedHlsUrl(value, { requireToken: true });
   if (
@@ -226,7 +182,7 @@ function parsePreviouslySignedHlsUrl(
   return signedUrl;
 }
 
-async function cancelResponseBody(response: Response) {
+async function cancelResponseBody(response) {
   try {
     await response.body?.cancel();
   } catch {
@@ -234,11 +190,11 @@ async function cancelResponseBody(response: Response) {
   }
 }
 
-function wait(delayMs: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+function wait(delayMs) {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
-function retryDelayMs(response: Response, attempt: number) {
+function retryDelayMs(response, attempt) {
   const retryAfter = Number(response.headers.get("retry-after"));
   if (Number.isFinite(retryAfter) && retryAfter >= 0) {
     return Math.max(100, Math.min(1_000, retryAfter * 1_000));
@@ -246,20 +202,19 @@ function retryDelayMs(response: Response, attempt: number) {
   return RATE_LIMIT_RETRY_DELAYS_MS[attempt];
 }
 
-async function fetchTextWith429Retry(
-  createUrl: (attempt: number) => string,
-  init: RequestInit,
-  maxLength: number
-): Promise<{ body: string | null; status: number | null }> {
+async function fetchTextWith429Retry(createUrl, init, maxLength) {
   const attempts = RATE_LIMIT_RETRY_DELAYS_MS.length + 1;
+
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    let retryDelay: number | null = null;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+    let retryDelay = null;
+
     try {
       const response = await fetch(createUrl(attempt), {
         ...init,
-        cache: "no-store",
         redirect: "manual",
-        signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
+        signal: controller.signal
       });
       if (response.status === 429 && attempt < attempts - 1) {
         retryDelay = retryDelayMs(response, attempt);
@@ -277,28 +232,36 @@ async function fetchTextWith429Retry(
       }
     } catch {
       return { body: null, status: null };
+    } finally {
+      clearTimeout(timeout);
     }
+
     await wait(retryDelay);
   }
+
   return { body: null, status: 429 };
 }
 
-async function withSigningFlowSlot<T>(task: () => Promise<T>): Promise<T> {
+async function withSigningFlowSlot(task) {
   if (activeSigningFlows >= MAX_CONCURRENT_SIGNING_FLOWS) {
-    await new Promise<void>((resolve) => signingFlowWaiters.push(resolve));
+    await new Promise((resolve) => signingFlowWaiters.push(resolve));
   } else {
     activeSigningFlows += 1;
   }
+
   try {
     return await task();
   } finally {
     const next = signingFlowWaiters.shift();
-    if (next) next();
-    else activeSigningFlows -= 1;
+    if (next) {
+      next();
+    } else {
+      activeSigningFlows -= 1;
+    }
   }
 }
 
-async function requestSignedHlsUrl(media: CameraSource): Promise<URL | null> {
+async function requestSignedHlsUrl(media) {
   if (media.status !== "Enabled") return null;
   const unsignedUrl = parseExpectedHlsUrl(media.unsignedVideoUrl);
   if (!unsignedUrl) return null;
@@ -320,13 +283,13 @@ async function requestSignedHlsUrl(media: CameraSource): Promise<URL | null> {
     return null;
   }
 
-  let grant: unknown;
+  let grant;
   try {
     grant = JSON.parse(grantResult.body);
   } catch {
     return null;
   }
-  if (!isValidGrant(grant)) {
+  if (!validateGrant(grant)) {
     console.error(
       `[wallboard] DriveNC camera ${media.id} HLS grant was invalid`
     );
@@ -356,7 +319,7 @@ async function requestSignedHlsUrl(media: CameraSource): Promise<URL | null> {
     return null;
   }
 
-  let suffix: unknown;
+  let suffix;
   try {
     suffix = JSON.parse(tokenResult.body);
   } catch {
@@ -371,20 +334,17 @@ async function requestSignedHlsUrl(media: CameraSource): Promise<URL | null> {
   return signedUrl;
 }
 
-async function probeHlsManifest(
-  signedValue: unknown,
-  cameraId: string
-): Promise<boolean> {
-  const signedUrl = parseExpectedHlsUrl(signedValue, {
-    requireToken: true
-  });
-  if (!signedUrl) return false;
+async function probeHlsManifest(signedUrl, cameraId) {
+  const parsedUrl = parseExpectedHlsUrl(signedUrl, { requireToken: true });
+  if (!parsedUrl) return false;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   try {
-    const response = await fetch(signedUrl, {
+    const response = await fetch(parsedUrl, {
       method: "GET",
-      cache: "no-store",
       redirect: "manual",
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      signal: controller.signal,
       headers: {
         accept:
           "application/vnd.apple.mpegurl, application/x-mpegURL, */*;q=0.1"
@@ -411,10 +371,12 @@ async function probeHlsManifest(
       `[wallboard] DriveNC camera ${cameraId} signed manifest request failed`
     );
     return false;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
-function fallbackMedia(media: CameraSource): TrafficCamera {
+function fallbackMedia(media) {
   return {
     id: media.id,
     label: media.label,
@@ -427,12 +389,11 @@ function fallbackMedia(media: CameraSource): TrafficCamera {
     mediaMode: "snapshot",
     hlsAvailable: false,
     retryHls:
-      media.status === "Enabled" && Boolean(media.unsignedVideoUrl),
-    refreshAfterMs: UNAVAILABLE_HLS_RETRY_MS
+      media.status === "Enabled" && Boolean(media.unsignedVideoUrl)
   };
 }
 
-async function verifySignedHls(media: CameraSource): Promise<TrafficCamera> {
+async function verifySignedHls(media) {
   const signedUrl = await requestSignedHlsUrl(media);
   if (!signedUrl || !(await probeHlsManifest(signedUrl, media.id))) {
     return fallbackMedia(media);
@@ -448,36 +409,27 @@ async function verifySignedHls(media: CameraSource): Promise<TrafficCamera> {
     status: media.status,
     mediaMode: "hls",
     hlsAvailable: true,
-    retryHls: false,
-    refreshAfterMs: SIGNED_HLS_RENEW_MS
+    retryHls: false
   };
 }
 
-function cacheMatchesMedia(
-  entry: SignedMediaEntry | undefined,
-  media: CameraSource
-) {
-  return Boolean(
+function cacheMatchesMedia(entry, media) {
+  return (
     entry &&
-      entry.unsignedVideoUrl === media.unsignedVideoUrl &&
-      entry.status === media.status
+    entry.unsignedVideoUrl === media.unsignedVideoUrl &&
+    entry.status === media.status
   );
 }
 
-function signedMediaIsWithinMaxAge(
-  entry: SignedMediaEntry,
-  now: number
-) {
+function signedMediaIsWithinMaxAge(entry, now) {
   return (
     !entry.data.hlsAvailable ||
-    now - entry.signedAt < SIGNED_HLS_MAX_STALE_MS
+    (Number.isFinite(entry.signedAt) &&
+      now - entry.signedAt < SIGNED_HLS_MAX_STALE_MS)
   );
 }
 
-function cachedMediaForResponse(
-  entry: SignedMediaEntry,
-  now: number
-): TrafficCamera {
+function cachedMediaForResponse(entry, now) {
   let refreshAt =
     entry.renewalRetryAt ||
     entry.checkedAt +
@@ -496,19 +448,15 @@ function cachedMediaForResponse(
   };
 }
 
-function freshCachedEntry(
-  media: CameraSource,
-  now: number,
-  { force = false }: { force?: boolean } = {}
-): SignedMediaEntry | null {
+function freshCachedEntry(media, now, { force = false } = {}) {
   const cached = signedMediaCache.get(media.id);
   if (
-    !cached ||
     !cacheMatchesMedia(cached, media) ||
     !signedMediaIsWithinMaxAge(cached, now)
   ) {
     return null;
   }
+
   const lastAttemptAt = cached.lastAttemptAt ?? cached.checkedAt;
   if (force) {
     return now - lastAttemptAt < UNAVAILABLE_HLS_RETRY_MS ? cached : null;
@@ -522,13 +470,9 @@ function freshCachedEntry(
   return now - cached.checkedAt < ttl ? cached : null;
 }
 
-function deferredMediaForResponse(
-  media: CameraSource,
-  now: number
-): TrafficCamera {
+function deferredMediaForResponse(media, now) {
   const cached = signedMediaCache.get(media.id);
   const data =
-    cached &&
     cacheMatchesMedia(cached, media) &&
     signedMediaIsWithinMaxAge(cached, now)
       ? cached.data
@@ -539,16 +483,13 @@ function deferredMediaForResponse(
   };
 }
 
-async function refreshSignedMedia(
-  media: CameraSource
-): Promise<SignedMediaEntry> {
+async function refreshSignedMedia(media) {
   const previous = signedMediaCache.get(media.id);
   const samePreviousSource = cacheMatchesMedia(previous, media);
   const verified = await verifySignedHls(media);
 
   if (
     !verified.hlsAvailable &&
-    previous &&
     samePreviousSource &&
     previous.data.hlsAvailable &&
     signedMediaIsWithinMaxAge(previous, Date.now())
@@ -572,7 +513,7 @@ async function refreshSignedMedia(
   }
 
   const checkedAt = Date.now();
-  const entry: SignedMediaEntry = {
+  const entry = {
     data: verified,
     unsignedVideoUrl: media.unsignedVideoUrl,
     status: media.status,
@@ -585,79 +526,79 @@ async function refreshSignedMedia(
   return entry;
 }
 
-async function getSignedMedia(
-  media: CameraSource
-): Promise<SignedMediaEntry> {
-  const existing = signedMediaInFlight.get(media.id);
-  if (existing) return existing;
-  const task = withSigningFlowSlot(() => refreshSignedMedia(media)).finally(
-    () => signedMediaInFlight.delete(media.id)
+async function mapWithConcurrency(items, limit, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  async function run() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => run())
   );
-  signedMediaInFlight.set(media.id, task);
-  return task;
+  return results;
 }
 
-async function getCameraMetadata(
-  apiKey: string | null,
-  now: number
-): Promise<CameraSource[]> {
-  if (!apiKey) return [];
+async function getCameraMetadata(config, now) {
+  if (!config.driveNcApiKey) return [];
   if (
-    cameraMetaCache &&
+    cameraMetaCache.data &&
     now - cameraMetaCache.fetchedAt < CAMERA_META_CACHE_TTL_MS
   ) {
     return cameraMetaCache.data;
   }
-  if (cameraMetaFetch) return cameraMetaFetch;
+  if (cameraMetaRefreshInProgress) {
+    if (cameraMetaCache.data) return cameraMetaCache.data;
+    throw new Error("camera-metadata-refresh-in-progress");
+  }
 
-  cameraMetaFetch = (async () => {
-    try {
-      const url = new URL(DRIVENC_CAMERA_API_URL);
-      url.searchParams.set("key", apiKey);
-      url.searchParams.set("format", "json");
-      const response = await fetch(url, {
-        cache: "no-store",
-        redirect: "manual",
-        signal: AbortSignal.timeout(CAMERA_INVENTORY_TIMEOUT_MS),
-        headers: { accept: "application/json" }
-      });
-      if (!response.ok) {
-        const status = response.status;
-        await cancelResponseBody(response);
-        throw new Error(`inventory returned ${status}`);
-      }
-      const rows = (await response.json()) as DriveNcCamera[];
-      if (!Array.isArray(rows)) throw new Error("inventory payload invalid");
-      const byId = new Map(
-        rows.map((camera) => [String(camera.Id), camera])
-      );
-      const selected = CAMERA_CONFIG.map((configured) => {
-        const row = byId.get(configured.id);
-        if (!row || String(row.Id) !== configured.id) {
-          throw new Error(`inventory omitted camera ${configured.id}`);
-        }
-        return extractMedia(row, configured);
-      });
-      cameraMetaCache = { data: selected, fetchedAt: Date.now() };
-      return selected;
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "unknown error";
-      console.error("[wallboard] DriveNC camera inventory failed:", message);
-      if (cameraMetaCache) return cameraMetaCache.data;
-      throw new Error("camera-metadata-unavailable");
+  cameraMetaRefreshInProgress = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    CAMERA_INVENTORY_TIMEOUT_MS
+  );
+  try {
+    const url = new URL(DRIVENC_CAMERA_API_URL);
+    url.searchParams.set("key", config.driveNcApiKey);
+    url.searchParams.set("format", "json");
+    const response = await fetch(url, {
+      headers: { accept: "application/json" },
+      redirect: "manual",
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      const status = response.status;
+      await cancelResponseBody(response);
+      throw new Error(`inventory returned ${status}`);
     }
-  })().finally(() => {
-    cameraMetaFetch = null;
-  });
-  return cameraMetaFetch;
+    const rows = await response.json();
+    if (!Array.isArray(rows)) throw new Error("inventory payload invalid");
+    const byId = new Map(rows.map((camera) => [String(camera.Id), camera]));
+    const selected = CAMERA_CONFIG.map((configured) => {
+      const row = byId.get(configured.id);
+      if (!row || String(row.Id) !== configured.id) {
+        throw new Error(`inventory omitted camera ${configured.id}`);
+      }
+      return extractMedia(row, configured);
+    });
+    cameraMetaCache = { data: selected, fetchedAt: now };
+    return selected;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown";
+    console.error("[wallboard] DriveNC camera inventory failed:", message);
+    if (cameraMetaCache.data) return cameraMetaCache.data;
+    throw new Error("camera-metadata-unavailable");
+  } finally {
+    clearTimeout(timeout);
+    cameraMetaRefreshInProgress = false;
+  }
 }
 
-async function resolveMediaWithinSigningBudget(
-  metadata: CameraSource[],
-  now: number,
-  forceCameraId: string | null
-): Promise<TrafficCamera[]> {
+async function resolveMediaWithinSigningBudget(metadata, now, forceCameraId) {
   const dueIndexes = new Set(
     metadata
       .map((media, index) => ({ media, index }))
@@ -665,11 +606,13 @@ async function resolveMediaWithinSigningBudget(
         ({ media }) =>
           !freshCachedEntry(media, now, {
             force: media.id === forceCameraId
-          })
+          }) &&
+          !signedMediaRefreshReservations.has(media.id)
       )
       .map(({ index }) => index)
   );
-  const selectedIndexes: number[] = [];
+
+  const selectedIndexes = [];
   let remainingBudget = MAX_SIGNING_FLOWS_PER_REQUEST;
   const forcedIndex = metadata.findIndex(
     (media, index) =>
@@ -679,7 +622,8 @@ async function resolveMediaWithinSigningBudget(
     selectedIndexes.push(forcedIndex);
     remainingBudget -= 1;
   }
-  let lastRoundRobinIndex: number | null = null;
+
+  let lastRoundRobinIndex = null;
   for (
     let offset = 0;
     offset < metadata.length && remainingBudget > 0;
@@ -696,64 +640,85 @@ async function resolveMediaWithinSigningBudget(
       (lastRoundRobinIndex + 1) % metadata.length;
   }
 
-  const refreshed = await Promise.all(
-    selectedIndexes.map(async (index) => ({
-      id: metadata[index].id,
-      entry: await getSignedMedia(metadata[index])
-    }))
+  const selectedIds = new Set(
+    selectedIndexes.map((index) => metadata[index].id)
   );
-  const refreshedById = new Map(
-    refreshed.map(({ id, entry }) => [id, entry])
-  );
-  return metadata.map((media) => {
-    const refreshedEntry = refreshedById.get(media.id);
-    if (refreshedEntry) {
-      return cachedMediaForResponse(refreshedEntry, Date.now());
-    }
-    const cached = freshCachedEntry(media, now, {
-      force: media.id === forceCameraId
+  selectedIds.forEach((id) => signedMediaRefreshReservations.add(id));
+  try {
+    const refreshed = await mapWithConcurrency(
+      selectedIndexes.map((index) => metadata[index]),
+      MAX_CONCURRENT_SIGNING_FLOWS,
+      (media) => withSigningFlowSlot(() => refreshSignedMedia(media))
+    );
+    const refreshedById = new Map(
+      refreshed.map((entry, index) => [
+        metadata[selectedIndexes[index]].id,
+        entry
+      ])
+    );
+    return metadata.map((media) => {
+      const refreshedEntry = refreshedById.get(media.id);
+      if (refreshedEntry) {
+        return cachedMediaForResponse(refreshedEntry, Date.now());
+      }
+      const cached = freshCachedEntry(media, now, {
+        force: media.id === forceCameraId
+      });
+      return cached
+        ? cachedMediaForResponse(cached, now)
+        : deferredMediaForResponse(media, now);
     });
-    return cached
-      ? cachedMediaForResponse(cached, now)
-      : deferredMediaForResponse(media, now);
+  } finally {
+    selectedIds.forEach((id) => signedMediaRefreshReservations.delete(id));
+  }
+}
+
+function jsonResponse(data, status = 200, extraHeaders = {}) {
+  return Response.json(data, {
+    status,
+    headers: {
+      "cache-control": "no-store",
+      ...extraHeaders
+    }
   });
 }
 
-export async function getTrafficCameraMetadataResponse(
-  apiKey: string | null,
-  forceCameraId: string | null
-): Promise<CameraMetadataResponse> {
-  if (cameraApiRequestInProgress) {
-    return {
-      status: 503,
-      cameras: [],
-      headers: {
-        "Retry-After": "1",
-        "X-Camera-Proxy-Error": "refresh-in-progress"
-      }
-    };
-  }
-  cameraApiRequestInProgress = true;
+async function cameraMetadataResponse(config, forceCameraId) {
   try {
     const now = Date.now();
-    const metadata = await getCameraMetadata(apiKey, now);
-    if (!metadata.length) return { status: 200, cameras: [] };
-    return {
-      status: 200,
-      cameras: await resolveMediaWithinSigningBudget(
+    const metadata = await getCameraMetadata(config, now);
+    if (!metadata.length) return jsonResponse([]);
+    return jsonResponse(
+      await resolveMediaWithinSigningBudget(
         metadata,
         now,
         forceCameraId
       )
-    };
+    );
   } catch {
-    return {
-      status: 502,
-      cameras: [],
-      headers: {
-        "X-Camera-Proxy-Error": "upstream-unavailable"
-      }
-    };
+    return jsonResponse([], 502, {
+      "x-camera-proxy-error": "upstream-unavailable"
+    });
+  }
+}
+
+export async function handleTrafficCameraMetadataRequest(config, url) {
+  if (cameraApiRequestInProgress) {
+    return jsonResponse([], 503, {
+      "retry-after": "1",
+      "x-camera-proxy-error": "refresh-in-progress"
+    });
+  }
+
+  cameraApiRequestInProgress = true;
+  const requestedCameraId = url.searchParams.get("cameraId");
+  const forceCameraId =
+    url.searchParams.get("refresh") === "1" &&
+    isTrafficCameraId(requestedCameraId)
+      ? requestedCameraId
+      : null;
+  try {
+    return await cameraMetadataResponse(config, forceCameraId);
   } finally {
     cameraApiRequestInProgress = false;
   }

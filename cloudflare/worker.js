@@ -4,13 +4,16 @@
 import { cachedValue } from "./cache.js";
 import { getAnalytics } from "./analytics.js";
 import { cameraSnapshotResponse } from "./cameraImages.js";
+import {
+  handleTrafficCameraMetadataRequest,
+  trafficCameraRoster
+} from "./cameras.js";
 import { getConfig, hasAccess } from "./config.js";
 import {
   checkDatabaseMonitors,
   checkWebsite,
   getLiveStream,
   getSocialPosts,
-  getTrafficCameras,
   getWeather,
   sslState
 } from "./providers.js";
@@ -106,15 +109,14 @@ function buildAlerts(payload, config) {
 }
 
 async function buildPayload(config) {
-  const [analyticsResult, website, databaseMonitors, socialPosts, liveStream, localWeather, cameras] =
+  const [analyticsResult, website, databaseMonitors, socialPosts, liveStream, localWeather] =
     await Promise.all([
       getAnalytics(config),
       checkWebsite(config),
       checkDatabaseMonitors(config),
       getSocialPosts(config),
       getLiveStream(config),
-      getWeather(),
-      getTrafficCameras(config)
+      getWeather()
     ]);
 
   const payload = {
@@ -146,7 +148,10 @@ async function buildPayload(config) {
     socialPosts,
     liveStream,
     localWeather,
-    trafficCameras: { refreshSeconds: 60, cameras }
+    trafficCameras: {
+      refreshSeconds: 60,
+      cameras: trafficCameraRoster()
+    }
   };
   payload.alerts = buildAlerts(payload, config);
   return payload;
@@ -196,6 +201,22 @@ export default {
       return request.method === "HEAD"
         ? new Response(null, { status: response.status, headers: response.headers })
         : response;
+    }
+
+    if (url.pathname === "/api/cameras") {
+      if (request.method !== "GET") {
+        return new Response("Method not allowed", {
+          status: 405,
+          headers: { "cache-control": "no-store" }
+        });
+      }
+      if (!hasAccess(request, config)) {
+        return Response.json(
+          { error: "Wallboard access token is missing or invalid." },
+          { status: 401, headers: { "cache-control": "no-store" } }
+        );
+      }
+      return handleTrafficCameraMetadataRequest(config, url);
     }
 
     const cameraMatch = url.pathname.match(/^\/api\/traffic-camera\/([0-9]+)$/);

@@ -83,9 +83,15 @@ export type TrafficCamera = {
   id: string;
   label: string;
   videoUrl: string | null;
+  imageUrl: string;
+  fallbackUrl: string;
   viewerUrl: string;
   status: string;
   priority: boolean;
+  mediaMode: "hls" | "snapshot";
+  hlsAvailable: boolean;
+  retryHls: boolean;
+  refreshAfterMs: number;
 };
 
 export type WallboardPayload = {

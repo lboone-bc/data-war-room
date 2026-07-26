@@ -11,6 +11,7 @@
     "dev:restart": "bash scripts/restart-dev.sh",
     "deploy:cloudflare": "wrangler deploy",
     "test:cloudflare": "node scripts/test-cloudflare-analytics.mjs",
+    "test:cameras": "node --no-warnings scripts/test-camera-signing.mjs",
     "build": "next build",
     "start": "next start -H 0.0.0.0",
     "lint": "next lint",
