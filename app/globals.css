@@ -706,7 +706,7 @@ a {
 }
 
 .camera-tile video,
-.camera-tile iframe {
+.camera-snapshot-frame img {
   width: 100%;
   height: 100%;
   display: block;
@@ -715,19 +715,15 @@ a {
   background: #050709;
 }
 
-.camera-fallback-frame {
+.camera-snapshot-frame {
   position: absolute;
   inset: 0;
   overflow: hidden;
 }
 
-.camera-fallback-frame iframe {
+.camera-snapshot-frame img {
   position: absolute;
-  left: 0;
-  top: 0;
-  width: 1600px;
-  height: 1000px;
-  transform-origin: top left;
+  inset: 0;
 }
 
 .camera-status-dot {
@@ -747,9 +743,9 @@ a {
   animation: camera-dot-pulse 2.2s ease-in-out infinite;
 }
 
-.camera-tile.fallback .camera-status-dot {
-  background: var(--red);
-  animation: camera-dot-pulse 900ms ease-in-out infinite;
+.camera-tile.snapshot .camera-status-dot {
+  background: var(--amber);
+  animation: camera-dot-pulse 2.2s ease-in-out infinite;
 }
 
 @keyframes camera-dot-pulse {
@@ -773,6 +769,19 @@ a {
   font-size: 8px;
   font-weight: 900;
   letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.camera-unavailable {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--red);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 

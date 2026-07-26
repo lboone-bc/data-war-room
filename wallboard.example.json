@@ -77,14 +77,14 @@
     "forecast": []
   },
   "trafficCameras": {
-    "refreshSeconds": 90,
+    "refreshSeconds": 60,
     "cameras": [
       {
         "id": "4208",
         "label": "I-26 MM37 — Long Shoals Rd",
         "videoUrl": null,
         "viewerUrl": "https://www.drivenc.gov/map/Cctv/4208",
-        "status": "Fallback",
+        "status": "Snapshot",
         "priority": true
       }
     ]

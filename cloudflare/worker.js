@@ -3,6 +3,7 @@
 
 import { cachedValue } from "./cache.js";
 import { getAnalytics } from "./analytics.js";
+import { cameraSnapshotResponse } from "./cameraImages.js";
 import { getConfig, hasAccess } from "./config.js";
 import {
   checkDatabaseMonitors,
@@ -145,7 +146,7 @@ async function buildPayload(config) {
     socialPosts,
     liveStream,
     localWeather,
-    trafficCameras: { refreshSeconds: 90, cameras }
+    trafficCameras: { refreshSeconds: 60, cameras }
   };
   payload.alerts = buildAlerts(payload, config);
   return payload;
@@ -156,7 +157,7 @@ async function wallboardResponse(config) {
   // screens share one composition pass while the deeper provider caches keep
   // their own appropriate GA/NCDOT/NWS/YouTube/Apify refresh intervals.
   const result = await cachedValue({
-    key: "wallboard-payload-v3",
+    key: "wallboard-payload-v4",
     ttlMs: 25_000,
     fallback: null,
     load: () => buildPayload(config),
@@ -192,6 +193,23 @@ export default {
         );
       }
       const response = await wallboardResponse(config);
+      return request.method === "HEAD"
+        ? new Response(null, { status: response.status, headers: response.headers })
+        : response;
+    }
+
+    const cameraMatch = url.pathname.match(/^\/api\/traffic-camera\/([0-9]+)$/);
+    if (cameraMatch) {
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return new Response("Method not allowed", { status: 405 });
+      }
+      if (!hasAccess(request, config)) {
+        return new Response("Wallboard access token is missing or invalid.", {
+          status: 401,
+          headers: { "cache-control": "no-store" }
+        });
+      }
+      const response = await cameraSnapshotResponse(cameraMatch[1]);
       return request.method === "HEAD"
         ? new Response(null, { status: response.status, headers: response.headers })
         : response;

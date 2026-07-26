@@ -56,8 +56,9 @@
 - Traffic cameras
   - Config: `DRIVENC_API_KEY`; keep the numeric camera ID/label/priority lists aligned in `cloudflare/providers.js` and `lib/trafficCameras.ts`.
   - IDs: `4208`, `4839`, `6120`, `5269`, `4210`, `4868`, `4876`, `4221` (I-26/US-25 corridor). DriveNC metadata is cached 90 seconds with in-flight de-duplication, a failed-attempt cache, and last-good fallback.
-  - `Views[0].VideoUrl` supplies public HLS streams. The browser plays native HLS on Safari and `hls.js` elsewhere; playback must reach `playing` within 18 seconds or that tile falls back to a scaled `https://www.drivenc.gov/map/Cctv/<id>` viewer iframe. The old JPEG proxy route and IPCamLive feeds are gone.
-  - Layout remains an unlabeled `2 x 4` grid in `.ops-column`; labels are accessibility text, status dots show live/fallback state, and camera `4208` receives the amber priority frame.
+  - Current upstream status (verified 2026-07-26): all eight `Views[0].VideoUrl` manifests return `401` plus an `XEngine` Basic-auth challenge. DriveNC developer credentials do not authorize that challenge. Each candidate HLS URL is therefore preflighted anonymously and cached for 10 minutes; only a fresh valid HLS response may reach the browser, never a stale last-good URL.
+  - Safe current delivery: DriveNC's public `https://www.drivenc.gov/map/Cctv/<id>` JPEG is fetched through the allowlisted local route `app/api/traffic-camera/[id]/route.ts` or Cloudflare route `/api/traffic-camera/<id>` (`cloudflare/cameraImages.js`). The proxy refreshes at most once per 60 seconds per camera, verifies the content is an image, de-duplicates concurrent requests, backs off failures, and serves the last-good frame when available. `public/index.html` and `app/wallboard/page.tsx` render that same-origin image instead of an NCDOT iframe, preventing browser login prompts.
+  - Layout remains an unlabeled `2 x 4` grid in `.ops-column`; labels are accessibility text, amber status dots identify snapshot mode, and camera `4208` receives the amber priority frame.
 
 ## Security And Access
 
@@ -86,7 +87,7 @@
 - Plan a coordinated Node 22 + Next.js 16/React migration. It is required to clear the remaining Next.js 14/PostCSS production audit advisories and to move beyond the Node-20-compatible Wrangler `~4.63.0` pin; treat it as a dedicated regression-tested upgrade, not an automatic `npm audit fix --force`.
 - If Cloudflare Git deployment ever wipes secrets, replace it with a GitHub Actions workflow using `cloudflare/wrangler-action` and a scoped Cloudflare API token.
 - If strict SSL-expiry monitoring is needed outside Site24x7, add a trusted certificate-monitor binding/provider; Workers `fetch` validates TLS but does not expose peer-certificate expiry, so the production Worker intentionally does not invent a date from certificate-transparency data.
-- After extended TV testing, decide whether eight simultaneous HLS feeds are acceptable on the Apple TV/signage browser; if not, cycle four feeds at a time or cap HLS resolution.
+- If NCDOT restores anonymous HLS, confirm the server-side preflight enables it without exposing an auth challenge and reassess whether eight simultaneous feeds are acceptable on the Apple TV/signage browser.
 - Add deploy/change feed from the preferred release system.
 - Add vendor-specific fallback for dashboards that block iframe embedding.
 - Add admin settings for thresholds and panel visibility.

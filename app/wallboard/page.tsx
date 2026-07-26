@@ -787,43 +787,42 @@ function WeatherPanel({ payload }: { payload: WallboardPayload }) {
 }
 
 const HLS_CONNECT_TIMEOUT_MS = 18_000;
-const CAMERA_IFRAME_WIDTH = 1600;
-const CAMERA_IFRAME_HEIGHT = 1000;
 
-function CameraFallback({ camera }: { camera: TrafficCamera }) {
-  const shellRef = useRef<HTMLDivElement | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+function CameraSnapshot({
+  camera,
+  retryKey
+}: {
+  camera: TrafficCamera;
+  retryKey: number;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    const shell = shellRef.current;
-    const iframe = iframeRef.current;
-    if (!shell || !iframe) return;
-
-    const updateScale = () => {
-      const rect = shell.getBoundingClientRect();
-      if (!rect.width || !rect.height) return;
-      const scale = Math.max(
-        rect.width / CAMERA_IFRAME_WIDTH,
-        rect.height / CAMERA_IFRAME_HEIGHT
-      );
-      iframe.style.transform = `scale(${scale})`;
-    };
-
-    updateScale();
-    const observer = new ResizeObserver(updateScale);
-    observer.observe(shell);
-    return () => observer.disconnect();
-  }, []);
+    const token =
+      new URLSearchParams(window.location.search).get("token") ||
+      window.localStorage.getItem("wallboard_token");
+    const url = new URL(
+      `/api/traffic-camera/${encodeURIComponent(camera.id)}`,
+      window.location.origin
+    );
+    if (token) url.searchParams.set("token", token);
+    url.searchParams.set("v", String(retryKey));
+    setFailed(false);
+    setSrc(url.toString());
+  }, [camera.id, retryKey]);
 
   return (
-    <div className="camera-fallback-frame" ref={shellRef}>
-      <iframe
-        ref={iframeRef}
-        src={camera.viewerUrl}
-        title={camera.label}
-        loading="lazy"
-        referrerPolicy="strict-origin-when-cross-origin"
-      />
+    <div className="camera-snapshot-frame">
+      {src ? (
+        <img
+          src={src}
+          alt={camera.label}
+          loading="eager"
+          onError={() => setFailed(true)}
+        />
+      ) : null}
+      {failed ? <span className="camera-unavailable">snapshot unavailable</span> : null}
     </div>
   );
 }
@@ -836,13 +835,13 @@ function TrafficCameraTile({
   retryKey: number;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [state, setState] = useState<"connecting" | "live" | "fallback">(
-    camera.videoUrl ? "connecting" : "fallback"
+  const [state, setState] = useState<"connecting" | "live" | "snapshot">(
+    camera.videoUrl ? "connecting" : "snapshot"
   );
 
   useEffect(() => {
     if (!camera.videoUrl) {
-      setState("fallback");
+      setState("snapshot");
       return;
     }
 
@@ -862,7 +861,7 @@ function TrafficCameraTile({
       if (settled) return;
       settled = true;
       window.clearTimeout(watchdog);
-      setState("fallback");
+      setState("snapshot");
     };
     const watchdog = window.setTimeout(markFailed, HLS_CONNECT_TIMEOUT_MS);
 
@@ -903,18 +902,18 @@ function TrafficCameraTile({
   return (
     <div
       className={`camera-tile${camera.priority ? " priority" : ""} ${state}`}
-      aria-label={`${camera.label}: ${state === "live" ? "live stream" : "DriveNC fallback"}`}
+      aria-label={`${camera.label}: ${state === "live" ? "live stream" : "NCDOT snapshot"}`}
     >
       <span className="camera-status-dot" aria-hidden="true" />
-      {state === "fallback" ? (
-        <CameraFallback camera={camera} />
+      {state === "snapshot" ? (
+        <CameraSnapshot camera={camera} retryKey={retryKey} />
       ) : (
         <video ref={videoRef} aria-label={camera.label} />
       )}
-      {state === "fallback" ? (
+      {state === "snapshot" ? (
         <div className="camera-failed">
-          <AlertTriangle size={14} />
-          viewer fallback
+          <RefreshCcw size={12} />
+          60s snapshot
         </div>
       ) : null}
     </div>
@@ -925,6 +924,7 @@ function TrafficCameraPanel({ payload }: { payload: WallboardPayload }) {
   const [refreshedAt, setRefreshedAt] = useState(() => new Date());
   const [retryKey, setRetryKey] = useState(0);
   const refreshMs = payload.trafficCameras.refreshSeconds * 1000;
+  const hasLiveHls = payload.trafficCameras.cameras.some((camera) => camera.videoUrl);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -942,7 +942,7 @@ function TrafficCameraPanel({ payload }: { payload: WallboardPayload }) {
         ))}
       </div>
       <div className="camera-refresh">
-        live HLS - metadata {payload.trafficCameras.refreshSeconds}s - checked {timeLabel(refreshedAt.toISOString())}
+        {hasLiveHls ? "live HLS - snapshot fallback" : "NCDOT snapshots - HLS auth-gated"} - {payload.trafficCameras.refreshSeconds}s - checked {timeLabel(refreshedAt.toISOString())}
       </div>
     </Panel>
   );

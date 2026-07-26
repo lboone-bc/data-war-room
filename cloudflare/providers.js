@@ -1,6 +1,6 @@
 import { cachedValue } from "./cache.js";
 
-const CAMERA_CONFIG = [
+export const CAMERA_CONFIG = [
   { id: "4208", label: "I-26 MM37 — Long Shoals Rd", priority: true },
   { id: "4839", label: "I-26 MM35", priority: false },
   { id: "6120", label: "I-26 MM36", priority: false },
@@ -28,14 +28,48 @@ function fallbackCameras() {
     ...camera,
     videoUrl: null,
     viewerUrl: `https://www.drivenc.gov/map/Cctv/${camera.id}`,
-    status: "Fallback"
+    status: "Snapshot"
   }));
+}
+
+export function isTrafficCameraId(id) {
+  return CAMERA_CONFIG.some((camera) => camera.id === String(id));
+}
+
+async function publicHlsUrl(cameraId, candidate) {
+  if (typeof candidate !== "string" || !candidate.trim()) return null;
+  const videoUrl = candidate.trim();
+  const result = await cachedValue({
+    key: `drivenc-public-hls-v1-${cameraId}-${videoUrl}`,
+    ttlMs: 10 * 60_000,
+    fallback: null,
+    logLabel: `DriveNC camera ${cameraId} HLS preflight`,
+    load: async () => {
+      const response = await fetch(videoUrl, {
+        headers: { accept: "application/vnd.apple.mpegurl, application/x-mpegURL, text/plain" },
+        signal: AbortSignal.timeout(10_000)
+      });
+      if (!response.ok) {
+        throw new Error(`manifest returned ${response.status}`);
+      }
+      const manifest = await response.text();
+      if (!manifest.trimStart().startsWith("#EXTM3U")) {
+        throw new Error("manifest response was not HLS");
+      }
+      return videoUrl;
+    }
+  });
+
+  // A stale last-good URL is unsafe here: if NCDOT has placed Basic auth in
+  // front of a formerly public manifest, returning that URL to the browser
+  // causes a credential dialog. Only a fresh successful preflight is exposed.
+  return result.stale ? null : result.value;
 }
 
 export async function getTrafficCameras(config) {
   if (!config.driveNcApiKey) return fallbackCameras();
   const result = await cachedValue({
-    key: "drivenc-cameras-v2",
+    key: "drivenc-cameras-v3",
     ttlMs: 90_000,
     fallback: fallbackCameras(),
     logLabel: "DriveNC camera metadata",
@@ -47,25 +81,26 @@ export async function getTrafficCameras(config) {
       if (!response.ok) throw new Error(`DriveNC API returned ${response.status}`);
       const cameras = await response.json();
       const byId = new Map(cameras.map((camera) => [String(camera.Id), camera]));
-      const selected = CAMERA_CONFIG.map((camera) => {
+      const selected = await Promise.all(CAMERA_CONFIG.map(async (camera) => {
         const view = byId.get(camera.id)?.Views?.[0];
+        const videoUrl = await publicHlsUrl(camera.id, view?.VideoUrl);
         return {
           ...camera,
-          videoUrl:
-            typeof view?.VideoUrl === "string" && view.VideoUrl.trim()
-              ? view.VideoUrl.trim()
-              : null,
+          videoUrl,
           viewerUrl: `https://www.drivenc.gov/map/Cctv/${camera.id}`,
-          status: view?.Status || (view?.VideoUrl ? "Live" : "Fallback")
+          status: videoUrl ? (view?.Status || "Live") : "Snapshot"
         };
-      });
-      if (!selected.some((camera) => camera.videoUrl)) {
-        throw new Error("DriveNC API returned no live streams for configured cameras");
-      }
+      }));
       return selected;
     }
   });
-  return result.value;
+  return result.stale
+    ? result.value.map((camera) => ({
+        ...camera,
+        videoUrl: null,
+        status: "Snapshot"
+      }))
+    : result.value;
 }
 
 function stringValue(value) {

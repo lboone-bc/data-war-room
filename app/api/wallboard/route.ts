@@ -133,9 +133,9 @@ export async function GET(request: NextRequest) {
     localWeather,
     trafficCameras: {
       refreshSeconds: TRAFFIC_CAMERA_REFRESH_SECONDS,
-      // The developer API key stays server-side. Only the public HLS stream
-      // and viewer fallback URLs returned for the curated cameras reach the
-      // browser; both work from the React route and the Cloudflare index.
+      // The developer API key stays server-side. An HLS URL only reaches the
+      // browser after an anonymous manifest preflight succeeds; otherwise the
+      // same-origin snapshot route avoids upstream Basic-auth prompts.
       cameras: trafficCameras
     }
   };
